@@ -337,7 +337,6 @@
     let dragDist = 0;
 
     function onPointerDown(e) {
-        if(isBattleMode) return;
         isDragging = true;
         startX = e.clientX;
         startY = e.clientY;
@@ -345,27 +344,33 @@
     }
 
     function onPointerMove(e) {
-        if(isBattleMode) return;
         if(isDragging) {
             const dx = e.clientX - startX;
             const dy = e.clientY - startY;
             dragDist += Math.abs(dx) + Math.abs(dy);
-            camLat -= dx * 0.005;
-            camLon += dy * 0.005;
-            camLon = Math.max(-Math.PI/2, Math.min(Math.PI/2, camLon));
-            updateCameraBuildMode();
+            
+            if (isBattleMode) {
+                 const sens = 0.005;
+                 robotGroup.rotateY(-dx * sens);
+                 robotGroup.rotateX(-dy * sens);
+            } else {
+                camLat -= dx * 0.005;
+                camLon += dy * 0.005;
+                camLon = Math.max(-Math.PI/2, Math.min(Math.PI/2, camLon));
+                updateCameraBuildMode();
+            }
             startX = e.clientX;
             startY = e.clientY;
         }
     }
 
     function onPointerUp(e) {
-        if(isBattleMode) return;
         isDragging = false;
         if(dragDist < 10) handleTap(e);
     }
 
     function handleTap(e) {
+        if (isBattleMode) return;
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
@@ -403,8 +408,10 @@
     function animate() {
         requestAnimationFrame(animate);
         if (isBattleMode) {
-            robotGroup.rotateX(inputVector.y * 0.04);
-            robotGroup.rotateY(-inputVector.x * 0.04);
+            const moveSpeed = 0.05;
+            const moveDir = new THREE.Vector3(inputVector.x, 0, inputVector.y);
+            moveDir.applyQuaternion(robotGroup.quaternion);
+            velocity.add(moveDir.multiplyScalar(moveSpeed));
             robotGroup.rotateZ(-inputVector.x * 0.02);
 
             if (isBoosting) {
