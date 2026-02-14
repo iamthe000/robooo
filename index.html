@@ -91,9 +91,7 @@
     let particles = [];
     let stars, gridHelper;
     let ambLight, dirLight;
-    let enemyGroup;
-    let enemyCubes = [];
-    let enemyFireTimer = 0;
+    let enemies = [];
 
     
     let currentBlockType = 'normal';
@@ -251,7 +249,9 @@
             ambLight.intensity = 0.4;
             dirLight.intensity = 1.0;
             velocity.set(0,0,0);
-            spawnEnemy();
+            spawnEnemy(0, 0, -40);
+            spawnEnemy(15, 5, -50);
+            spawnEnemy(-15, -5, -50);
         } else {
             modeBtn.innerText = "BATTLE START";
             modeBtn.style.borderColor = "#00ccff";
@@ -273,11 +273,8 @@
             updateCameraBuildMode();
             bullets.forEach(b => scene.remove(b));
             bullets = [];
-            if(enemyGroup) {
-                scene.remove(enemyGroup);
-                enemyGroup = null;
-                enemyCubes = [];
-            }
+            enemies.forEach(e => scene.remove(e.group));
+            enemies = [];
         }
     }
 
@@ -446,19 +443,19 @@
             camera.position.lerp(robotGroup.position.clone().add(offset), 0.1);
             camera.lookAt(robotGroup.position);
 
-            if (enemyGroup) {
-                enemyGroup.lookAt(robotGroup.position);
-                const dist = enemyGroup.position.distanceTo(robotGroup.position);
+            enemies.forEach(e => {
+                e.group.lookAt(robotGroup.position);
+                const dist = e.group.position.distanceTo(robotGroup.position);
                 if (dist > 15) {
-                    enemyGroup.translateZ(0.03);
+                    e.group.translateZ(0.03);
                 }
                 
-                enemyFireTimer++;
-                if (enemyFireTimer > 100) {
-                    fireBullet(false);
-                    enemyFireTimer = 0;
+                e.fireTimer++;
+                if (e.fireTimer > 150) {
+                    fireBullet(false, e.group, e.cubes);
+                    e.fireTimer = Math.random() * 50;
                 }
-            }
+            });
 
             for (let i = bullets.length - 1; i >= 0; i--) {
                 const b = bullets[i];
@@ -471,25 +468,62 @@
                     continue;
                 }
 
-                const targetCubes = b.userData.isPlayer ? enemyCubes : cubes;
-                const targetGroup = b.userData.isPlayer ? enemyGroup : robotGroup;
-                let hit = false;
+                if (b.userData.isPlayer) {
+                    let hitEnemy = false;
+                    for (let k = enemies.length - 1; k >= 0; k--) {
+                        const enemy = enemies[k];
+                        for (let j = enemy.cubes.length - 1; j >= 0; j--) {
+                            const c = enemy.cubes[j];
+                            const worldPos = c.position.clone().applyMatrix4(enemy.group.matrixWorld);
+                            if (worldPos.distanceTo(b.position) < 0.8) {
+                                createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), c.material.color.getHex(), 0.3, 30);
+                                
+                                if (c.userData.type === 'core') {
+                                    scene.remove(enemy.group);
+                                    for(let m=0; m<20; m++) {
+                                        createParticle(worldPos, new THREE.Vector3((Math.random()-0.5), (Math.random()-0.5), (Math.random()-0.5)), 0xffa500, 0.5, 60);
+                                    }
+                                    enemies.splice(k, 1);
+                                    hitEnemy = true;
+                                    break;
+                                }
 
-                for (let j = targetCubes.length - 1; j >= 0; j--) {
-                    const c = targetCubes[j];
-                    const worldPos = c.position.clone().applyMatrix4(targetGroup.matrixWorld);
-                    if (worldPos.distanceTo(b.position) < 0.8) {
-                        createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), c.material.color.getHex(), 0.3, 30);
-                        targetGroup.remove(c);
-                        targetCubes.splice(j, 1);
-                        hit = true;
-                        break;
+                                enemy.group.remove(c);
+                                enemy.cubes.splice(j, 1);
+                                hitEnemy = true;
+                                break;
+                            }
+                        }
+                        if (hitEnemy) break;
                     }
-                }
-
-                if (hit) {
-                    scene.remove(b);
-                    bullets.splice(i, 1);
+                    if (hitEnemy) {
+                        scene.remove(b);
+                        bullets.splice(i, 1);
+                    }
+                } else {
+                    let hit = false;
+                    for (let j = cubes.length - 1; j >= 0; j--) {
+                        const c = cubes[j];
+                        const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
+                        if (worldPos.distanceTo(b.position) < 0.8) {
+                            createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), c.material.color.getHex(), 0.3, 30);
+                            
+                            if (c.position.lengthSq() < 0.1) { 
+                                alert("GAME OVER");
+                                toggleMode();
+                                return;
+                            }
+                            
+                            robotGroup.remove(c);
+                            cubes.splice(j, 1);
+                            hit = true;
+                            break;
+                        }
+                    }
+                    if (hit) {
+                        scene.remove(b);
+                        bullets.splice(i, 1);
+                    }
                 }
             }
 
@@ -534,16 +568,17 @@
         fireBtn.addEventListener('mousedown', ()=>fireBullet());
     }
 
-    function fireBullet(isPlayer = true) {
+    function fireBullet(isPlayer = true, sourceGroup = null, sourceCubes = null) {
         if(!isBattleMode) return;
-        const targetGroup = isPlayer ? robotGroup : enemyGroup;
-        const sourceCubes = isPlayer ? cubes : enemyCubes;
+        
+        const firingGroup = isPlayer ? robotGroup : sourceGroup;
+        const firingCubes = isPlayer ? cubes : sourceCubes;
         const color = isPlayer ? 0xffff00 : 0xff00ff;
 
-        sourceCubes.forEach(c => {
+        firingCubes.forEach(c => {
             if (c.userData.isTurret) {
-                const worldPos = c.position.clone().applyMatrix4(targetGroup.matrixWorld);
-                const fireDir = c.userData.fireDir.clone().applyQuaternion(targetGroup.quaternion).normalize();
+                const worldPos = c.position.clone().applyMatrix4(firingGroup.matrixWorld);
+                const fireDir = c.userData.fireDir.clone().applyQuaternion(firingGroup.quaternion).normalize();
                 const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshBasicMaterial({ color: color }));
                 bullet.position.copy(worldPos).add(fireDir.clone().multiplyScalar(0.8));
                 bullet.userData = { vel: fireDir.multiplyScalar(2.0), life: 120, isPlayer: isPlayer };
@@ -569,15 +604,15 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
-    function spawnEnemy() {
-        enemyGroup = new THREE.Group();
-        enemyCubes = [];
-        scene.add(enemyGroup);
-        enemyGroup.position.set(0, 0, -40);
-        enemyGroup.lookAt(robotGroup.position);
+    function spawnEnemy(x, y, z) {
+        const group = new THREE.Group();
+        const cubesArr = [];
+        scene.add(group);
+        group.position.set(x, y, z);
+        group.lookAt(robotGroup.position);
 
         const blocks = [
-            {x:0, y:0, z:0, type:'normal', dir:new THREE.Vector3(0,0,1)},
+            {x:0, y:0, z:0, type:'core', dir:new THREE.Vector3(0,0,1)},
             {x:0, y:0, z:-1, type:'engine', dir:new THREE.Vector3(0,0,-1)},
             {x:1, y:0, z:0, type:'normal', dir:new THREE.Vector3(1,0,0)},
             {x:-1, y:0, z:0, type:'normal', dir:new THREE.Vector3(-1,0,0)},
@@ -592,6 +627,7 @@
             let color = 0xff0000; 
             let emissive = 0x330000;
 
+            if (b.type === 'core') { color = 0x00ff00; emissive = 0x003300; }
             if (b.type === 'engine') { color = 0xff3300; emissive = 0x330000; }
             if (b.type === 'turret') { color = 0xffd700; emissive = 0x332200; }
 
@@ -630,9 +666,11 @@
                 cube.add(part);
             }
 
-            enemyGroup.add(cube);
-            enemyCubes.push(cube);
+            group.add(cube);
+            cubesArr.push(cube);
         });
+        
+        enemies.push({ group: group, cubes: cubesArr, fireTimer: Math.random() * 100 });
     }
 </script>
 </body>
