@@ -92,6 +92,7 @@
     let stars, gridHelper;
     let ambLight, dirLight;
     let enemies = [];
+    let spawnTimer = 0;
 
     
     let currentBlockType = 'normal';
@@ -249,6 +250,7 @@
             ambLight.intensity = 0.4;
             dirLight.intensity = 1.0;
             velocity.set(0,0,0);
+            spawnTimer = 0;
             spawnEnemy(0, 0, -40);
             spawnEnemy(15, 5, -50);
             spawnEnemy(-15, -5, -50);
@@ -442,6 +444,14 @@
             offset.applyQuaternion(robotGroup.quaternion);
             camera.position.lerp(robotGroup.position.clone().add(offset), 0.1);
             camera.lookAt(robotGroup.position);
+
+            spawnTimer++;
+            if (spawnTimer > 200 && enemies.length < 5) {
+                const rx = (Math.random() - 0.5) * 100;
+                const rz = -40 - Math.random() * 60;
+                spawnEnemy(rx, (Math.random()-0.5)*20, rz);
+                spawnTimer = 0;
+            }
 
             enemies.forEach(e => {
                 e.group.lookAt(robotGroup.position);
