@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Space Voxel Fighter V5</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; color: white; font-family: 'Segoe UI', sans-serif; touch-action: none; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        
+        .btn { position: absolute; pointer-events: auto; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.5); color: white; padding: 8px 16px; border-radius: 20px; font-weight: bold; user-select: none; backdrop-filter: blur(5px); font-size: 12px; }
+        .btn:active { transform: scale(0.95); background: rgba(255, 255, 255, 0.2); }
+        
+        
+        #top-bar { position: absolute; top: 0; left: 0; width: 100%; height: 50px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; box-sizing: border-box; background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent); pointer-events: none; }
+        .menu-group { display: flex; gap: 10px; pointer-events: auto; }
+        
+        #mode-btn { border-color: #00ccff; color: #00ccff; box-shadow: 0 0 10px rgba(0, 204, 255, 0.3); }
+        #save-btn { border-color: #00ff00; color: #00ff00; }
+        #load-btn { border-color: #ffff00; color: #ffff00; }
+
+        
+        #palette-container { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 5px; pointer-events: none; width: 90%; }
+        #palette { display: flex; gap: 10px; background: rgba(30, 30, 30, 0.9); padding: 10px; border-radius: 30px; pointer-events: auto; border: 1px solid rgba(255,255,255,0.2); overflow-x: auto; max-width: 100%; }
+        .palette-item { min-width: 45px; height: 45px; border-radius: 8px; border: 2px solid #555; cursor: pointer; transition: 0.2s; position: relative; display: flex; align-items: center; justify-content: center; font-size: 10px; color: rgba(255,255,255,0.7); background: #333; }
+        .palette-item.selected { border-color: white; transform: scale(1.1); z-index: 10; color: white; box-shadow: 0 0 10px white; }
+        
+        #p-normal { background: #00ccff; }
+        #p-engine { background: #ff4400; }
+        #p-turret { background: #ffd700; }
+        #p-delete { background: #333; border-color: #ff0000; color: #ff0000; font-weight: bold; } 
+        
+        #build-msg { text-align: center; font-size: 12px; opacity: 0.8; text-shadow: 1px 1px 2px black; margin-bottom: 5px; }
+
+        
+        #battle-ui { display: none; width: 100%; height: 100%; }
+        #stick-area { position: absolute; bottom: 40px; left: 40px; width: 120px; height: 120px; background: rgba(255,255,255,0.05); border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); pointer-events: auto; }
+        #stick-knob { position: absolute; top: 35px; left: 35px; width: 50px; height: 50px; background: rgba(0, 255, 255, 0.8); border-radius: 50%; pointer-events: none; box-shadow: 0 0 10px cyan; }
+        #boost-btn { position: absolute; bottom: 50px; right: 40px; width: 70px; height: 70px; border-radius: 50%; background: rgba(255, 69, 0, 0.2); border: 2px solid orangered; display: flex; align-items: center; justify-content: center; font-weight: bold; pointer-events: auto; color: orangered; box-shadow: 0 0 10px orangered; }
+        #fire-btn { position: absolute; bottom: 140px; right: 50px; width: 60px; height: 60px; border-radius: 50%; background: rgba(255, 215, 0, 0.2); border: 2px solid gold; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; pointer-events: auto; color: gold; box-shadow: 0 0 10px gold; }
+        
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; transform: translate(-50%, -50%); pointer-events: none; border: 1px solid rgba(255,255,255,0.5); border-radius: 50%; opacity: 0; }
+
+        
+        #file-input { display: none; }
+    </style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<div id="ui-layer">
+    <div id="top-bar">
+        <div class="menu-group">
+            <button id="save-btn" class="btn" style="position:relative;">SAVE</button>
+            <button id="load-btn" class="btn" style="position:relative;">LOAD</button>
+            <input type="file" id="file-input" accept=".json">
+        </div>
+        <button id="mode-btn" class="btn" style="position:relative;">BATTLE START</button>
+    </div>
+
+    <div id="palette-container">
+        <div id="build-msg">SAVEで保存 / LOADで読込</div>
+        <div id="palette">
+            <div id="p-normal" class="palette-item selected" onclick="selectBlock('normal')">BLOCK</div>
+            <div id="p-engine" class="palette-item" onclick="selectBlock('engine')">ENGINE</div>
+            <div id="p-turret" class="palette-item" onclick="selectBlock('turret')">TURRET</div>
+            <div id="p-delete" class="palette-item" onclick="selectBlock('delete')">DEL</div>
+        </div>
+    </div>
+
+    <div id="crosshair"></div>
+    <div id="battle-ui">
+        <div id="stick-area"><div id="stick-knob"></div></div>
+        <div id="fire-btn" class="btn">SHOT</div>
+        <div id="boost-btn" class="btn">BOOST</div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+    
+    let scene, camera, renderer;
+    let robotGroup; 
+    let cubes = []; 
+    let raycaster, mouse;
+    let isBattleMode = false;
+    let bullets = [];
+    let particles = [];
+    let stars, gridHelper;
+    let ambLight, dirLight;
+
+    
+    let currentBlockType = 'normal';
+
+    
+    let inputVector = { x: 0, y: 0 };
+    let isBoosting = false;
+    let velocity = new THREE.Vector3();
+    let camLat = 0.5, camLon = 0.5;
+    
+    init();
+    animate();
+
+    function init() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x222428); 
+
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        ambLight = new THREE.AmbientLight(0xffffff, 0.8);
+        scene.add(ambLight);
+        dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(10, 20, 10);
+        scene.add(dirLight);
+
+        createStars();
+        stars.visible = false;
+
+        gridHelper = new THREE.GridHelper(30, 30, 0x555555, 0x333333);
+        gridHelper.position.y = -2; 
+        scene.add(gridHelper);
+
+        robotGroup = new THREE.Group();
+        scene.add(robotGroup);
+        
+        addCube(0, 0, 0, 'normal', new THREE.Vector3(0,0,1)); 
+
+        raycaster = new THREE.Raycaster();
+        mouse = new THREE.Vector2();
+
+        window.addEventListener('resize', onWindowResize, false);
+        const canvas = renderer.domElement;
+        canvas.addEventListener('pointerdown', onPointerDown, false);
+        canvas.addEventListener('pointermove', onPointerMove, false);
+        canvas.addEventListener('pointerup', onPointerUp, false);
+
+        document.getElementById('mode-btn').addEventListener('click', toggleMode);
+        document.getElementById('save-btn').addEventListener('click', saveRobot);
+        document.getElementById('load-btn').addEventListener('click', () => document.getElementById('file-input').click());
+        document.getElementById('file-input').addEventListener('change', loadRobot);
+        
+        setupJoystick();
+        setupButtons();
+        updateCameraBuildMode();
+    }
+
+    function createStars() {
+        const starGeo = new THREE.BufferGeometry();
+        const starCount = 3000;
+        const posArray = new Float32Array(starCount * 3);
+        for(let i=0; i<starCount*3; i++) {
+            posArray[i] = (Math.random() - 0.5) * 1000;
+        }
+        starGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        const starMat = new THREE.PointsMaterial({color: 0xaaaaaa, size: 0.8, transparent: true});
+        stars = new THREE.Points(starGeo, starMat);
+        scene.add(stars);
+    }
+
+    
+
+    function saveRobot() {
+        if(isBattleMode) return;
+        
+        
+        const data = cubes.map(c => {
+            return {
+                x: c.position.x,
+                y: c.position.y,
+                z: c.position.z,
+                type: c.userData.type, 
+                
+                dir: c.userData.direction ? {x: c.userData.direction.x, y: c.userData.direction.y, z: c.userData.direction.z} : {x:0,y:1,z:0}
+            };
+        });
+
+        const json = JSON.stringify(data);
+        const blob = new Blob([json], {type: "application/json"});
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "my_robot.json";
+        link.click();
+    }
+
+    function loadRobot(event) {
+        if(isBattleMode) return;
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                
+                
+                for(let i=cubes.length-1; i>=0; i--) {
+                    robotGroup.remove(cubes[i]);
+                }
+                cubes = [];
+
+                
+                data.forEach(d => {
+                    const dirVec = new THREE.Vector3(d.dir.x, d.dir.y, d.dir.z);
+                    addCube(d.x, d.y, d.z, d.type, dirVec);
+                });
+                
+                
+                document.getElementById('file-input').value = '';
+                
+            } catch (err) {
+                alert("ファイルの読み込みに失敗しました");
+                console.error(err);
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    
+    function toggleMode() {
+        isBattleMode = !isBattleMode;
+        const modeBtn = document.getElementById('mode-btn');
+        const battleUI = document.getElementById('battle-ui');
+        const paletteContainer = document.getElementById('palette-container');
+        const saveLoadBtns = document.querySelectorAll('#save-btn, #load-btn');
+        const crosshair = document.getElementById('crosshair');
+
+        if (isBattleMode) {
+            modeBtn.innerText = "BUILD";
+            modeBtn.style.borderColor = "orange";
+            modeBtn.style.color = "orange";
+            battleUI.style.display = 'block';
+            paletteContainer.style.display = 'none';
+            saveLoadBtns.forEach(b => b.style.display = 'none'); 
+            crosshair.style.opacity = 1;
+
+            scene.background = new THREE.Color(0x000000);
+            scene.fog = new THREE.FogExp2(0x050510, 0.003);
+            stars.visible = true;
+            gridHelper.visible = false;
+            ambLight.intensity = 0.4;
+            dirLight.intensity = 1.0;
+            velocity.set(0,0,0);
+        } else {
+            modeBtn.innerText = "BATTLE START";
+            modeBtn.style.borderColor = "#00ccff";
+            modeBtn.style.color = "#00ccff";
+            battleUI.style.display = 'none';
+            paletteContainer.style.display = 'flex';
+            saveLoadBtns.forEach(b => b.style.display = 'block');
+            crosshair.style.opacity = 0;
+
+            scene.background = new THREE.Color(0x222428);
+            scene.fog = null;
+            stars.visible = false;
+            gridHelper.visible = true;
+            ambLight.intensity = 0.8;
+            dirLight.intensity = 0.8;
+            
+            robotGroup.position.set(0,0,0);
+            robotGroup.rotation.set(0,0,0);
+            updateCameraBuildMode();
+            bullets.forEach(b => scene.remove(b));
+            bullets = [];
+        }
+    }
+
+    function selectBlock(type) {
+        currentBlockType = type;
+        document.querySelectorAll('.palette-item').forEach(el => el.classList.remove('selected'));
+        document.getElementById('p-' + type).classList.add('selected');
+    }
+
+    function addCube(x, y, z, type, direction) {
+        
+        const exists = cubes.some(c => Math.abs(c.position.x - x) < 0.1 && Math.abs(c.position.y - y) < 0.1 && Math.abs(c.position.z - z) < 0.1);
+        if(exists) return;
+
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        let color = 0x00ccff;
+        let emissive = 0x000000;
+
+        if (type === 'engine') { color = 0xff3300; emissive = 0x330000; }
+        if (type === 'turret') { color = 0xffd700; emissive = 0x332200; }
+        if (x===0 && y===0 && z===0) color = 0x00ff00; 
+
+        const material = new THREE.MeshStandardMaterial({ 
+            color: color, roughness: 0.3, metalness: 0.5, emissive: emissive
+        });
+        
+        const cube = new THREE.Mesh(geometry, material);
+        cube.position.set(x, y, z);
+        
+        
+        cube.userData = { type: type, direction: direction };
+
+        const edges = new THREE.EdgesGeometry(geometry);
+        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 }));
+        cube.add(line);
+
+        if (type === 'engine' || type === 'turret') {
+            let partGeo, partMat, offsetNum;
+            if(type === 'engine') {
+                partGeo = new THREE.ConeGeometry(0.3, 0.5, 8);
+                partMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+                offsetNum = 0.3;
+                cube.userData.isEngine = true;
+                cube.userData.thrustDir = direction;
+            } else {
+                partGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.8, 8);
+                partMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8 });
+                offsetNum = 0.4;
+                cube.userData.isTurret = true;
+                cube.userData.fireDir = direction;
+            }
+            const part = new THREE.Mesh(partGeo, partMat);
+            const quaternion = new THREE.Quaternion();
+            quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+            part.setRotationFromQuaternion(quaternion);
+            part.position.add(direction.clone().multiplyScalar(offsetNum));
+            cube.add(part);
+        }
+
+        robotGroup.add(cube);
+        cubes.push(cube);
+    }
+
+    let isDragging = false;
+    let startX, startY;
+    let dragDist = 0;
+
+    function onPointerDown(e) {
+        if(isBattleMode) return;
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        dragDist = 0;
+    }
+
+    function onPointerMove(e) {
+        if(isBattleMode) return;
+        if(isDragging) {
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            dragDist += Math.abs(dx) + Math.abs(dy);
+            camLat -= dx * 0.005;
+            camLon += dy * 0.005;
+            camLon = Math.max(-Math.PI/2, Math.min(Math.PI/2, camLon));
+            updateCameraBuildMode();
+            startX = e.clientX;
+            startY = e.clientY;
+        }
+    }
+
+    function onPointerUp(e) {
+        if(isBattleMode) return;
+        isDragging = false;
+        if(dragDist < 10) handleTap(e);
+    }
+
+    function handleTap(e) {
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(cubes);
+
+        if (intersects.length > 0) {
+            const intersect = intersects[0];
+            const obj = intersect.object;
+
+            
+            if (currentBlockType === 'delete') {
+                
+                if (obj.position.lengthSq() < 0.1) return;
+                
+                robotGroup.remove(obj);
+                cubes = cubes.filter(c => c !== obj);
+                return;
+            }
+
+            
+            const face = intersect.face;
+            const newPos = obj.position.clone().add(face.normal);
+            addCube(newPos.x, newPos.y, newPos.z, currentBlockType, face.normal);
+        }
+    }
+
+    function updateCameraBuildMode() {
+        const radius = 14;
+        camera.position.x = radius * Math.sin(camLat) * Math.cos(camLon);
+        camera.position.z = radius * Math.cos(camLat) * Math.cos(camLon);
+        camera.position.y = radius * Math.sin(camLon);
+        camera.lookAt(0, 0, 0);
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        if (isBattleMode) {
+            robotGroup.rotateX(inputVector.y * 0.04);
+            robotGroup.rotateY(-inputVector.x * 0.04);
+            robotGroup.rotateZ(-inputVector.x * 0.02);
+
+            if (isBoosting) {
+                let totalThrust = new THREE.Vector3(0,0,0);
+                cubes.forEach(c => {
+                    if (c.userData.isEngine) {
+                        const forceDir = c.userData.thrustDir.clone().applyQuaternion(robotGroup.quaternion).negate();
+                        totalThrust.add(forceDir);
+                        if(Math.random()>0.3) {
+                             const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
+                             createParticle(worldPos, forceDir.clone().negate().multiplyScalar(0.4));
+                        }
+                    }
+                });
+                velocity.add(totalThrust.normalize().multiplyScalar(0.06));
+            }
+
+            robotGroup.position.add(velocity);
+            velocity.multiplyScalar(0.98);
+
+            const offset = new THREE.Vector3(0, 3, 9);
+            offset.applyQuaternion(robotGroup.quaternion);
+            camera.position.lerp(robotGroup.position.clone().add(offset), 0.1);
+            camera.lookAt(robotGroup.position);
+
+            bullets.forEach((b, i) => {
+                b.position.add(b.userData.vel);
+                b.userData.life--;
+                if(b.userData.life <= 0){ scene.remove(b); bullets.splice(i,1); }
+            });
+            particles.forEach((p, i) => {
+                p.position.add(p.userData.vel);
+                p.material.opacity = p.userData.life / p.userData.maxLife;
+                p.userData.life--;
+                if(p.userData.life <= 0){ scene.remove(p); particles.splice(i,1); }
+            });
+        }
+        renderer.render(scene, camera);
+    }
+
+    function setupJoystick() {
+        const area = document.getElementById('stick-area');
+        const knob = document.getElementById('stick-knob');
+        let start = {x:0, y:0};
+        area.addEventListener('touchstart', e => { e.preventDefault(); start.x = e.touches[0].clientX; start.y = e.touches[0].clientY; }, {passive:false});
+        area.addEventListener('touchmove', e => {
+            e.preventDefault();
+            const t = e.touches[0];
+            let dx = t.clientX - start.x, dy = t.clientY - start.y;
+            const dist = Math.sqrt(dx*dx + dy*dy), max = 45;
+            if(dist>max) { dx = dx/dist*max; dy = dy/dist*max; }
+            knob.style.transform = `translate(${dx}px, ${dy}px)`;
+            inputVector = { x: dx/max, y: dy/max };
+        }, {passive:false});
+        area.addEventListener('touchend', e => { e.preventDefault(); knob.style.transform = `translate(0,0)`; inputVector = { x: 0, y: 0 }; });
+    }
+
+    function setupButtons() {
+        const boostBtn = document.getElementById('boost-btn');
+        const fireBtn = document.getElementById('fire-btn');
+        const setPress = (el, val) => {
+            el.addEventListener('touchstart', e=>{e.preventDefault(); val(true)}, {passive:false});
+            el.addEventListener('touchend', e=>{e.preventDefault(); val(false)});
+            el.addEventListener('mousedown', ()=>val(true));
+            el.addEventListener('mouseup', ()=>val(false));
+        };
+        setPress(boostBtn, v => isBoosting = v);
+        fireBtn.addEventListener('touchstart', e=>{e.preventDefault(); fireBullet()});
+        fireBtn.addEventListener('mousedown', ()=>fireBullet());
+    }
+
+    function fireBullet() {
+        if(!isBattleMode) return;
+        cubes.forEach(c => {
+            if (c.userData.isTurret) {
+                const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
+                const fireDir = c.userData.fireDir.clone().applyQuaternion(robotGroup.quaternion).normalize();
+                const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshBasicMaterial({ color: 0xffff00 }));
+                bullet.position.copy(worldPos).add(fireDir.clone().multiplyScalar(0.8));
+                bullet.userData = { vel: fireDir.multiplyScalar(2.0), life: 120 };
+                scene.add(bullet);
+                bullets.push(bullet);
+                createParticle(bullet.position, fireDir.multiplyScalar(0.5), 0xffffaa, 0.4, 10);
+            }
+        });
+    }
+    
+    function createParticle(pos, dir, color=0xffaa00, size=0.2, life=20) {
+        const elm = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), new THREE.MeshBasicMaterial({color:color, transparent:true, opacity:0.8}));
+        elm.position.copy(pos);
+        const spread = new THREE.Vector3((Math.random()-0.5)*0.2, (Math.random()-0.5)*0.2, (Math.random()-0.5)*0.2);
+        elm.userData = { vel: dir.clone().add(spread), life: life, maxLife:life };
+        scene.add(elm);
+        particles.push(elm);
+    }
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+</script>
+</body>
+</html>
