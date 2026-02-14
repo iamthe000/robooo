@@ -72,6 +72,7 @@
 
     <div id="crosshair"></div>
     <div id="battle-ui">
+        <div id="hp-display" class="btn" style="top: 60px; left: 20px; width: 100px; text-align: center;">HP: 100</div>
         <div id="stick-area"><div id="stick-knob"></div></div>
         <div id="fire-btn" class="btn">SHOT</div>
         <div id="boost-btn" class="btn">BOOST</div>
@@ -93,6 +94,7 @@
     let ambLight, dirLight;
     let enemies = [];
     let spawnTimer = 0;
+    let playerHP = 100;
 
     
     let currentBlockType = 'normal';
@@ -250,6 +252,8 @@
             ambLight.intensity = 0.4;
             dirLight.intensity = 1.0;
             velocity.set(0,0,0);
+            playerHP = 100;
+            document.getElementById('hp-display').innerText = "HP: " + playerHP;
             spawnTimer = 0;
             spawnEnemy(0, 0, -40);
             spawnEnemy(15, 5, -50);
@@ -519,13 +523,17 @@
                             createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), c.material.color.getHex(), 0.3, 30);
                             
                             if (c.position.lengthSq() < 0.1) { 
-                                alert("GAME OVER");
-                                toggleMode();
-                                return;
+                                playerHP -= 10;
+                                document.getElementById('hp-display').innerText = "HP: " + playerHP;
+                                if (playerHP <= 0) {
+                                    alert("GAME OVER");
+                                    toggleMode();
+                                    return;
+                                }
+                            } else {
+                                robotGroup.remove(c);
+                                cubes.splice(j, 1);
                             }
-                            
-                            robotGroup.remove(c);
-                            cubes.splice(j, 1);
                             hit = true;
                             break;
                         }
