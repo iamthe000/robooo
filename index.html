@@ -110,6 +110,7 @@
     let isBoosting = false;
     let velocity = new THREE.Vector3();
     let camLat = 0.5, camLon = 0.5;
+    let shakeIntensity = 0;
     
     init();
     animate();
@@ -475,13 +476,23 @@
                     if (c.userData.isEngine) {
                         const forceDir = c.userData.thrustDir.clone().applyQuaternion(robotGroup.quaternion).negate();
                         totalThrust.add(forceDir);
-                        if(Math.random()>0.3) {
-                             const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
-                             createParticle(worldPos, forceDir.clone().negate().multiplyScalar(0.4));
+                        
+                        const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
+                        const exhaustDir = forceDir.clone().negate();
+
+                        // Jet flame
+                        if(Math.random()>0.1) {
+                             createParticle(worldPos, exhaustDir.clone().multiplyScalar(0.8), 0x00ffff, 0.3, 10, 'normal');
+                        }
+                        
+                        // Smoke
+                        if(Math.random()>0.7) {
+                             createParticle(worldPos, exhaustDir.clone().multiplyScalar(0.2), 0x555555, 0.5, 50, 'smoke');
                         }
                     }
                 });
                 velocity.add(totalThrust.normalize().multiplyScalar(0.06));
+                shakeIntensity = Math.min(shakeIntensity + 0.02, 0.5);
             }
 
             robotGroup.position.add(velocity);
@@ -533,18 +544,17 @@
                             const c = enemy.cubes[j];
                             const worldPos = c.position.clone().applyMatrix4(enemy.group.matrixWorld);
                             if (worldPos.distanceTo(b.position) < 0.8) {
-                                createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), c.material.color.getHex(), 0.3, 30);
+                                createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), 0xffffff, 0.3, 5, 'explosion'); // Hit flash
                                 
                                 if (c.userData.type === 'core') {
+                                    createExplosion(enemy.group.position, 0xffa500, 2.5); // Core destroyed big explosion
                                     scene.remove(enemy.group);
-                                    for(let m=0; m<20; m++) {
-                                        createParticle(worldPos, new THREE.Vector3((Math.random()-0.5), (Math.random()-0.5), (Math.random()-0.5)), 0xffa500, 0.5, 60);
-                                    }
                                     enemies.splice(k, 1);
                                     hitEnemy = true;
                                     break;
                                 }
 
+                                createExplosion(worldPos, c.material.color.getHex(), 0.8); // Block destroyed
                                 enemy.group.remove(c);
                                 enemy.cubes.splice(j, 1);
                                 hitEnemy = true;
@@ -565,12 +575,14 @@
                         
                         const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
                         if (worldPos.distanceTo(b.position) < 0.8) {
-                            createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), c.material.color.getHex(), 0.3, 30);
+                            createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), 0xffffff, 0.3, 5, 'explosion'); // Hit Flash
                             
                             if (c.position.lengthSq() < 0.1) { 
                                 playerHP -= 10;
                                 document.getElementById('hp-display').innerText = "HP: " + playerHP;
+                                shakeIntensity += 0.4;
                                 if (playerHP <= 0) {
+                                    createExplosion(robotGroup.position, 0x00ff00, 3.0);
                                     alert("GAME OVER");
                                     toggleMode();
                                     return;
@@ -578,6 +590,7 @@
                             } else {
                                 c.userData.hp -= 1;
                                 if (c.userData.hp <= 0) {
+                                    createExplosion(worldPos, c.material.color.getHex(), 0.8);
                                     c.visible = false;
                                     c.userData.isDead = true;
                                     c.userData.respawnTimer = 300; 
@@ -597,10 +610,28 @@
                 }
             }
 
+            if (shakeIntensity > 0) {
+                const shakeOffset = new THREE.Vector3((Math.random()-0.5)*shakeIntensity, (Math.random()-0.5)*shakeIntensity, (Math.random()-0.5)*shakeIntensity);
+                camera.position.add(shakeOffset);
+                shakeIntensity *= 0.9;
+                if(shakeIntensity < 0.1) shakeIntensity = 0;
+            }
+
             particles.forEach((p, i) => {
                 p.position.add(p.userData.vel);
-                p.material.opacity = p.userData.life / p.userData.maxLife;
                 p.userData.life--;
+                
+                if (p.userData.type === 'smoke') {
+                    p.scale.multiplyScalar(1.03);
+                    p.material.opacity = (p.userData.life / p.userData.maxLife) * 0.5;
+                    p.position.y += 0.02; 
+                } else if (p.userData.type === 'explosion') {
+                    p.scale.multiplyScalar(1.1);
+                    p.material.opacity = (p.userData.life / p.userData.maxLife);
+                } else {
+                    p.material.opacity = p.userData.life / p.userData.maxLife;
+                }
+
                 if(p.userData.life <= 0){ scene.remove(p); particles.splice(i,1); }
             });
             
@@ -614,6 +645,13 @@
                         c.material.color.setHex(c.userData.origColor);
                         const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
                         createParticle(worldPos, new THREE.Vector3(0,0,0), 0x00ff00, 0.5, 30);
+                    }
+                } else if (c.userData.hp < c.userData.maxHp) {
+                    const damageRatio = 1.0 - (c.userData.hp / c.userData.maxHp);
+                    if(Math.random() < damageRatio * 0.1) {
+                         const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
+                         const smokeDir = new THREE.Vector3(Math.random()-0.5, Math.random()*0.5 + 0.2, Math.random()-0.5).normalize().multiplyScalar(0.05);
+                         createParticle(worldPos, smokeDir, 0x222222, 0.6, 90, 'smoke');
                     }
                 }
             });
@@ -730,13 +768,39 @@
         });
     }
     
-    function createParticle(pos, dir, color=0xffaa00, size=0.2, life=20) {
+    function createParticle(pos, dir, color=0xffaa00, size=0.2, life=20, type='normal') {
         const elm = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), new THREE.MeshBasicMaterial({color:color, transparent:true, opacity:0.8}));
         elm.position.copy(pos);
-        const spread = new THREE.Vector3((Math.random()-0.5)*0.2, (Math.random()-0.5)*0.2, (Math.random()-0.5)*0.2);
-        elm.userData = { vel: dir.clone().add(spread), life: life, maxLife:life };
+        
+        let spreadVal = 0.2;
+        if(type === 'smoke') spreadVal = 0.1;
+        if(type === 'explosion') spreadVal = 0.5;
+
+        const spread = new THREE.Vector3((Math.random()-0.5)*spreadVal, (Math.random()-0.5)*spreadVal, (Math.random()-0.5)*spreadVal);
+        elm.userData = { vel: dir.clone().add(spread), life: life, maxLife:life, type: type };
         scene.add(elm);
         particles.push(elm);
+    }
+
+    function createExplosion(pos, color, scale = 1.0) {
+        // Flash
+        createParticle(pos, new THREE.Vector3(0,0,0), 0xffffff, 2.0 * scale, 5, 'explosion');
+        
+        // Debris
+        const debrisCount = Math.floor(15 * scale);
+        for(let i=0; i<debrisCount; i++) {
+             const dir = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(0.4 * scale);
+             createParticle(pos, dir, color, 0.3 * scale, 40, 'normal');
+        }
+
+        // Smoke
+        const smokeCount = Math.floor(8 * scale);
+        for(let i=0; i<smokeCount; i++) {
+             const dir = new THREE.Vector3(Math.random()-0.5, Math.random()*0.5, Math.random()-0.5).normalize().multiplyScalar(0.15 * scale);
+             createParticle(pos, dir, 0x555555, 0.8 * scale, 70, 'smoke');
+        }
+
+        shakeIntensity += 0.2 * scale;
     }
 
     function onWindowResize() {
