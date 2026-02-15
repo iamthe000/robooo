@@ -449,17 +449,26 @@ if ('serviceWorker' in navigator) {
             group.position.add(direction.clone().multiplyScalar(0.2)); 
             
             // Pod Body
-            const podGeo = new THREE.BoxGeometry(0.5, 0.5, 0.8);
-            const podMat = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.7 });
+            const podGeo = new THREE.BoxGeometry(0.6, 0.6, 0.8);
+            const podMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.6, roughness: 0.4 });
             const pod = new THREE.Mesh(podGeo, podMat);
             group.add(pod);
 
-            // Cap (Launcher Face)
-            const capGeo = new THREE.BoxGeometry(0.4, 0.4, 0.1);
-            const capMat = new THREE.MeshBasicMaterial({ color: 0x222222 }); 
-            const cap = new THREE.Mesh(capGeo, capMat);
-            cap.position.z = 0.4; // Front
-            group.add(cap);
+            // Tubes (2x2)
+            const tubeGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.2, 8);
+            const tubeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+            
+            const offsets = [
+                {x: -0.15, y: 0.15}, {x: 0.15, y: 0.15},
+                {x: -0.15, y: -0.15}, {x: 0.15, y: -0.15}
+            ];
+
+            offsets.forEach(off => {
+                const tube = new THREE.Mesh(tubeGeo, tubeMat);
+                tube.rotation.x = Math.PI / 2;
+                tube.position.set(off.x, off.y, 0.4); // Front face
+                group.add(tube);
+            });
 
             cube.add(group);
         }
@@ -1133,7 +1142,7 @@ if ('serviceWorker' in navigator) {
             
             let nText = nState.reloadTimer > 0 ? "RELOAD" : nState.ammo;
             let tText = tState.reloadTimer > 0 ? "RELOAD" : tState.ammo;
-            let mText = mState.reloadTimer > 0 ? "RELOAD" : "READY"; // Missile uses per-block reload, but global state can show ready
+            let mText = mState.reloadTimer > 0 ? "RELOAD" : mState.ammo;
 
             ammoDiv.innerHTML = `<span style="color:${nState.reloadTimer>0?'red':'cyan'}">NRM: ${nText}</span><br>` +
                                 `<span style="color:${tState.reloadTimer>0?'red':'orange'}">TRP: ${tText}</span><br>` + 
