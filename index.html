@@ -440,7 +440,7 @@ if ('serviceWorker' in navigator) {
             cube.userData.subType = 'missile';
             cube.userData.fireDir = direction;
             cube.userData.reloadTimer = 0;
-            cube.userData.missileReloadTime = 300; // Long reload
+            cube.userData.missileReloadTime = 240; // Approx 4s (double normal reload)
 
             const group = new THREE.Group();
             const quaternion = new THREE.Quaternion();
@@ -950,8 +950,9 @@ if ('serviceWorker' in navigator) {
 
                     missile.userData = { 
                         vel: fireDir.clone().multiplyScalar(0.3), // Start slow
-                        maxSpeed: 1.2,
-                        turnRate: 0.1,
+                        maxSpeed: 1.5,
+                        turnRate: 0.2,
+                        accel: 1.08,
                         life: 300, 
                         isPlayer: isPlayer, 
                         isMissile: true,
