@@ -311,7 +311,15 @@
         cube.position.set(x, y, z);
         
         
-        cube.userData = { type: type, direction: direction };
+        cube.userData = { 
+            type: type, 
+            direction: direction,
+            hp: 3,
+            maxHp: 3,
+            isDead: false,
+            respawnTimer: 0,
+            origColor: color
+        };
 
         const edges = new THREE.EdgesGeometry(geometry);
         const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 }));
@@ -518,6 +526,8 @@
                     let hit = false;
                     for (let j = cubes.length - 1; j >= 0; j--) {
                         const c = cubes[j];
+                        if (c.userData.isDead) continue; 
+                        
                         const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
                         if (worldPos.distanceTo(b.position) < 0.8) {
                             createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), c.material.color.getHex(), 0.3, 30);
@@ -531,8 +541,15 @@
                                     return;
                                 }
                             } else {
-                                robotGroup.remove(c);
-                                cubes.splice(j, 1);
+                                c.userData.hp -= 1;
+                                if (c.userData.hp <= 0) {
+                                    c.visible = false;
+                                    c.userData.isDead = true;
+                                    c.userData.respawnTimer = 300; 
+                                } else {
+                                    c.material.color.setHex(0xffffff);
+                                    setTimeout(() => { if(!c.userData.isDead) c.material.color.setHex(c.userData.origColor); }, 100);
+                                }
                             }
                             hit = true;
                             break;
@@ -550,6 +567,20 @@
                 p.material.opacity = p.userData.life / p.userData.maxLife;
                 p.userData.life--;
                 if(p.userData.life <= 0){ scene.remove(p); particles.splice(i,1); }
+            });
+            
+            cubes.forEach(c => {
+                if (c.userData.isDead) {
+                    c.userData.respawnTimer--;
+                    if (c.userData.respawnTimer <= 0) {
+                        c.visible = true;
+                        c.userData.isDead = false;
+                        c.userData.hp = c.userData.maxHp;
+                        c.material.color.setHex(c.userData.origColor);
+                        const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
+                        createParticle(worldPos, new THREE.Vector3(0,0,0), 0x00ff00, 0.5, 30);
+                    }
+                }
             });
         }
         renderer.render(scene, camera);
