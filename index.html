@@ -85,6 +85,7 @@ if ('serviceWorker' in navigator) {
     <div id="crosshair"></div>
     <div id="battle-ui">
         <div id="hp-display" class="btn" style="top: 60px; left: 20px; width: 100px; text-align: center;">HP: 100</div>
+        <div id="ammo-display" class="btn" style="top: 110px; left: 20px; width: 100px; text-align: center;">Ammo</div>
         <div id="stick-area"><div id="stick-knob"></div></div>
         <div id="normal-btn" class="btn">NORMAL</div>
         <div id="triple-btn" class="btn">TRIPLE</div>
@@ -122,8 +123,32 @@ if ('serviceWorker' in navigator) {
 
     // Gamepad state
     let gamepadVector = { x: 0, y: 0 };
+    let gamepadRightVector = { x: 0, y: 0 }; // Right Stick for Camera
     let isGamepadBoosting = false;
     let prevGamepadButtons = [];
+
+    // Weapon Stats & State
+    const WEAPON_STATS = {
+        normal: { fireDelay: 15, maxAmmo: 50, reloadTime: 120 }, // Slower fire, larger mag
+        triple: { fireDelay: 5, maxAmmo: 25, reloadTime: 90 }    // Fast fire, smaller mag (frequent reload)
+    };
+
+    let weaponState = {
+        normal: { cooldown: 0, ammo: 50, reloadTimer: 0 },
+        triple: { cooldown: 0, ammo: 25, reloadTimer: 0 }
+    };
+    
+    let inputState = {
+        fireNormal: false,
+        fireTriple: false,
+        fireAll: false
+    };
+
+    let gamepadFireState = {
+        normal: false,
+        triple: false,
+        all: false
+    };
     
     init();
     animate();
@@ -478,6 +503,18 @@ if ('serviceWorker' in navigator) {
         requestAnimationFrame(animate);
         if (isBattleMode) {
             updateGamepad();
+            updateWeapons();
+
+            const fireAll = inputState.fireAll || gamepadFireState.all;
+            const fireNormal = inputState.fireNormal || gamepadFireState.normal;
+            const fireTriple = inputState.fireTriple || gamepadFireState.triple;
+            
+            if (fireAll) {
+                attemptFire('normal');
+                attemptFire('triple');
+            }
+            if (fireNormal) attemptFire('normal');
+            if (fireTriple) attemptFire('triple');
 
             const moveSpeed = 0.05;
             // Merge inputs (Touch + Gamepad)
@@ -490,6 +527,15 @@ if ('serviceWorker' in navigator) {
             moveDir.applyQuaternion(robotGroup.quaternion);
             velocity.add(moveDir.multiplyScalar(moveSpeed));
             robotGroup.rotateZ(-mx * 0.02);
+
+            // Right Stick Camera Rotation
+            const rx = gamepadRightVector.x;
+            const ry = gamepadRightVector.y;
+            if (Math.abs(rx) > 0.1 || Math.abs(ry) > 0.1) {
+                const rotSpeed = 0.03;
+                robotGroup.rotateY(-rx * rotSpeed);
+                robotGroup.rotateX(-ry * rotSpeed);
+            }
 
             if (isBoosting || isGamepadBoosting) {
                 let totalThrust = new THREE.Vector3(0,0,0);
@@ -708,17 +754,13 @@ if ('serviceWorker' in navigator) {
             el.addEventListener('touchend', e=>{e.preventDefault(); val(false)});
             el.addEventListener('mousedown', ()=>val(true));
             el.addEventListener('mouseup', ()=>val(false));
+            el.addEventListener('mouseleave', ()=>val(false));
         };
         setPress(boostBtn, v => isBoosting = v);
         
-        fireBtn.addEventListener('touchstart', e=>{e.preventDefault(); fireBullet('all')});
-        fireBtn.addEventListener('mousedown', ()=>fireBullet('all'));
-        
-        normalBtn.addEventListener('touchstart', e=>{e.preventDefault(); fireBullet('normal')});
-        normalBtn.addEventListener('mousedown', ()=>fireBullet('normal'));
-
-        tripleBtn.addEventListener('touchstart', e=>{e.preventDefault(); fireBullet('triple')});
-        tripleBtn.addEventListener('mousedown', ()=>fireBullet('triple'));
+        setPress(fireBtn, v => inputState.fireAll = v);
+        setPress(normalBtn, v => inputState.fireNormal = v);
+        setPress(tripleBtn, v => inputState.fireTriple = v);
     }
 
     function updateGamepad() {
@@ -727,9 +769,13 @@ if ('serviceWorker' in navigator) {
         const gp = gamepads[0];
         if (!gp) return;
 
-        // Stick (Deadzone 0.1)
+        // Left Stick (Move)
         gamepadVector.x = Math.abs(gp.axes[0]) > 0.1 ? gp.axes[0] : 0;
         gamepadVector.y = Math.abs(gp.axes[1]) > 0.1 ? gp.axes[1] : 0;
+
+        // Right Stick (Camera)
+        gamepadRightVector.x = Math.abs(gp.axes[2]) > 0.1 ? gp.axes[2] : 0;
+        gamepadRightVector.y = Math.abs(gp.axes[3]) > 0.1 ? gp.axes[3] : 0;
 
         // Buttons
         // 0: A/Cross -> Boost
@@ -738,18 +784,11 @@ if ('serviceWorker' in navigator) {
         // 7: R2/RT -> All Fire
         // 5: R1/RB -> Normal Fire
         // 4: L1/LB -> Triple Fire
-        
-        const checkBtn = (idx, action) => {
-            if (gp.buttons[idx] && gp.buttons[idx].pressed && !prevGamepadButtons[idx]) {
-                action();
-            }
-        };
+        gamepadFireState.all = gp.buttons[7].pressed;
+        gamepadFireState.normal = gp.buttons[5].pressed;
+        gamepadFireState.triple = gp.buttons[4].pressed;
 
-        checkBtn(7, () => fireBullet('all'));
-        checkBtn(5, () => fireBullet('normal'));
-        checkBtn(4, () => fireBullet('triple'));
-
-        // Save state
+        // Save state (only needed if we need edges, but currently not needed for continuous fire)
         for (let i = 0; i < gp.buttons.length; i++) {
             prevGamepadButtons[i] = gp.buttons[i].pressed;
         }
@@ -931,6 +970,56 @@ if ('serviceWorker' in navigator) {
         });
         
         enemies.push({ group: group, cubes: cubesArr, fireTimer: Math.random() * 100 });
+    }
+
+    function updateWeapons() {
+        const types = ['normal', 'triple'];
+        types.forEach(type => {
+            const state = weaponState[type];
+            const stats = WEAPON_STATS[type];
+
+            if (state.cooldown > 0) state.cooldown--;
+            
+            if (state.reloadTimer > 0) {
+                state.reloadTimer--;
+                if (state.reloadTimer <= 0) {
+                    state.ammo = stats.maxAmmo;
+                }
+            }
+        });
+        
+        // Update UI
+        const ammoDiv = document.getElementById('ammo-display');
+        if (ammoDiv) {
+            const nState = weaponState.normal;
+            const tState = weaponState.triple;
+            
+            let nText = nState.reloadTimer > 0 ? "RELOAD" : nState.ammo;
+            let tText = tState.reloadTimer > 0 ? "RELOAD" : tState.ammo;
+            
+            ammoDiv.innerHTML = `<span style="color:${nState.reloadTimer>0?'red':'cyan'}">NRM: ${nText}</span><br><span style="color:${tState.reloadTimer>0?'red':'orange'}">TRP: ${tText}</span>`;
+        }
+    }
+
+    function attemptFire(type) {
+        const state = weaponState[type];
+        const stats = WEAPON_STATS[type];
+
+        if (state.reloadTimer > 0) return; // Reloading
+        if (state.cooldown > 0) return;    // Cooling down
+        if (state.ammo <= 0) {             // Out of ammo
+             state.reloadTimer = stats.reloadTime;
+             return;
+        }
+
+        // Fire!
+        fireBullet(type); 
+        state.ammo--;
+        state.cooldown = stats.fireDelay;
+        
+        if (state.ammo <= 0) {
+            state.reloadTimer = stats.reloadTime;
+        }
     }
 </script>
 </body>
