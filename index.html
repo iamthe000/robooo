@@ -127,7 +127,7 @@ if ('serviceWorker' in navigator) {
     let isBattleMode = false;
     let bullets = [];
     let particles = [];
-    let stars, gridHelper;
+    let stars, dust, gridHelper;
     let ambLight, dirLight;
     let enemies = [];
     let spawnTimer = 0;
@@ -202,6 +202,9 @@ if ('serviceWorker' in navigator) {
         createStars();
         stars.visible = false;
 
+        createSpaceDust();
+        dust.visible = false;
+
         gridHelper = new THREE.GridHelper(30, 30, 0x555555, 0x333333);
         gridHelper.position.y = -2; 
         scene.add(gridHelper);
@@ -263,7 +266,28 @@ if ('serviceWorker' in navigator) {
         scene.add(stars);
     }
 
-    
+    function createSpaceDust() {
+        const dustGeo = new THREE.BufferGeometry();
+        const dustCount = 1000;
+        const dustPos = new Float32Array(dustCount * 3);
+        
+        for(let i=0; i<dustCount*3; i+=3) {
+            dustPos[i] = (Math.random() - 0.5) * 100;
+            dustPos[i+1] = (Math.random() - 0.5) * 100;
+            dustPos[i+2] = (Math.random() - 0.5) * 100;
+        }
+        
+        dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+        const dustMat = new THREE.PointsMaterial({
+            color: 0xffffff, 
+            size: 0.8, 
+            transparent: true, 
+            opacity: 0.6
+        });
+        
+        dust = new THREE.Points(dustGeo, dustMat);
+        scene.add(dust);
+    }
 
     function saveRobot() {
         if(isBattleMode) return;
@@ -342,6 +366,7 @@ if ('serviceWorker' in navigator) {
             scene.background = new THREE.Color(0x000000);
             scene.fog = new THREE.FogExp2(0x050510, 0.003);
             stars.visible = true;
+            dust.visible = true;
             gridHelper.visible = false;
             ambLight.intensity = 0.4;
             dirLight.intensity = 1.0;
@@ -364,6 +389,7 @@ if ('serviceWorker' in navigator) {
             scene.background = new THREE.Color(0x222428);
             scene.fog = null;
             stars.visible = false;
+            dust.visible = false;
             gridHelper.visible = true;
             ambLight.intensity = 0.8;
             dirLight.intensity = 0.8;
@@ -730,9 +756,44 @@ if ('serviceWorker' in navigator) {
 
             robotGroup.position.add(velocity);
 
+            if (dust && dust.visible) {
+                const positions = dust.geometry.attributes.position.array;
+                const range = 60;
+                const rangeSq = range * range;
+                const cx = camera.position.x;
+                const cy = camera.position.y;
+                const cz = camera.position.z;
+                
+                const forward = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+                const fx = forward.x * range * 0.8;
+                const fy = forward.y * range * 0.8;
+                const fz = forward.z * range * 0.8;
+
+                for(let i=0; i<positions.length; i+=3) {
+                    const dx = positions[i] - cx;
+                    const dy = positions[i+1] - cy;
+                    const dz = positions[i+2] - cz;
+                    
+                    if (dx*dx + dy*dy + dz*dz > rangeSq) {
+                        positions[i] = cx + fx + (Math.random()-0.5)*range;
+                        positions[i+1] = cy + fy + (Math.random()-0.5)*range;
+                        positions[i+2] = cz + fz + (Math.random()-0.5)*range;
+                    }
+                }
+                dust.geometry.attributes.position.needsUpdate = true;
+            }
+
             const offset = new THREE.Vector3(0, 15, 30);
             offset.applyQuaternion(robotGroup.quaternion);
-            camera.position.copy(robotGroup.position).add(offset);
+            const targetPos = robotGroup.position.clone().add(offset);
+            
+            camera.position.lerp(targetPos, 0.1);
+
+            // Dynamic FOV
+            const speed = velocity.length();
+            const targetFOV = 75 + speed * 5; 
+            camera.fov += (targetFOV - camera.fov) * 0.1;
+            camera.updateProjectionMatrix();
             
             camera.up.set(0, 1, 0).applyQuaternion(robotGroup.quaternion);
             camera.lookAt(robotGroup.position);
