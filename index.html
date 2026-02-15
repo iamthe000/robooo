@@ -29,6 +29,8 @@
         #p-normal { background: #00ccff; }
         #p-engine { background: #ff4400; }
         #p-turret { background: #ffd700; }
+        #p-triple { background: #ffaa00; }
+        #p-nuke { background: #550000; border-color: #ff0000; color: #ff0000; }
         #p-delete { background: #333; border-color: #ff0000; color: #ff0000; font-weight: bold; } 
         
         #build-msg { text-align: center; font-size: 12px; opacity: 0.8; text-shadow: 1px 1px 2px black; margin-bottom: 5px; }
@@ -39,6 +41,7 @@
         #stick-knob { position: absolute; top: 35px; left: 35px; width: 50px; height: 50px; background: rgba(0, 255, 255, 0.8); border-radius: 50%; pointer-events: none; box-shadow: 0 0 10px cyan; }
         #boost-btn { position: absolute; bottom: 50px; right: 40px; width: 70px; height: 70px; border-radius: 50%; background: rgba(255, 69, 0, 0.2); border: 2px solid orangered; display: flex; align-items: center; justify-content: center; font-weight: bold; pointer-events: auto; color: orangered; box-shadow: 0 0 10px orangered; }
         #fire-btn { position: absolute; bottom: 140px; right: 50px; width: 60px; height: 60px; border-radius: 50%; background: rgba(255, 215, 0, 0.2); border: 2px solid gold; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; pointer-events: auto; color: gold; box-shadow: 0 0 10px gold; }
+        #nuke-btn { position: absolute; bottom: 220px; right: 50px; width: 60px; height: 60px; border-radius: 50%; background: rgba(255, 0, 0, 0.2); border: 2px solid red; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; pointer-events: auto; color: red; box-shadow: 0 0 10px red; }
         
         #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; transform: translate(-50%, -50%); pointer-events: none; border: 1px solid rgba(255,255,255,0.5); border-radius: 50%; opacity: 0; }
 
@@ -66,6 +69,8 @@
             <div id="p-normal" class="palette-item selected" onclick="selectBlock('normal')">BLOCK</div>
             <div id="p-engine" class="palette-item" onclick="selectBlock('engine')">ENGINE</div>
             <div id="p-turret" class="palette-item" onclick="selectBlock('turret')">TURRET</div>
+            <div id="p-triple" class="palette-item" onclick="selectBlock('triple')">TRIPLE</div>
+            <div id="p-nuke" class="palette-item" onclick="selectBlock('nuke')">NUKE</div>
             <div id="p-delete" class="palette-item" onclick="selectBlock('delete')">DEL</div>
         </div>
     </div>
@@ -74,7 +79,8 @@
     <div id="battle-ui">
         <div id="hp-display" class="btn" style="top: 60px; left: 20px; width: 100px; text-align: center;">HP: 100</div>
         <div id="stick-area"><div id="stick-knob"></div></div>
-        <div id="fire-btn" class="btn">SHOT</div>
+        <div id="nuke-btn" class="btn">NUKE</div>
+        <div id="fire-btn" class="btn">ALL FIRE</div>
         <div id="boost-btn" class="btn">BOOST</div>
     </div>
 </div>
@@ -301,6 +307,8 @@
 
         if (type === 'engine') { color = 0xff3300; emissive = 0x330000; }
         if (type === 'turret') { color = 0xffd700; emissive = 0x332200; }
+        if (type === 'triple') { color = 0xffaa00; emissive = 0x332200; }
+        if (type === 'nuke') { color = 0x550000; emissive = 0x220000; }
         if (x===0 && y===0 && z===0) color = 0x00ff00; 
 
         const material = new THREE.MeshStandardMaterial({ 
@@ -346,6 +354,60 @@
             part.setRotationFromQuaternion(quaternion);
             part.position.add(direction.clone().multiplyScalar(offsetNum));
             cube.add(part);
+        }
+
+        if (type === 'triple') {
+            cube.userData.isTurret = true;
+            cube.userData.subType = 'triple';
+            cube.userData.fireDir = direction;
+
+            const group = new THREE.Group();
+            const quaternion = new THREE.Quaternion();
+            quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+            group.setRotationFromQuaternion(quaternion);
+            group.position.add(direction.clone().multiplyScalar(0.2)); 
+            
+            const partGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.8, 8);
+            const partMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8 });
+            
+            const positions = [
+                {x: 0, y: 0.2, z: -0.15},
+                {x: -0.15, y: 0.2, z: 0.1},
+                {x: 0.15, y: 0.2, z: 0.1}
+            ];
+
+            positions.forEach(pos => {
+                const part = new THREE.Mesh(partGeo, partMat);
+                part.position.set(pos.x, pos.y, pos.z);
+                group.add(part);
+            });
+            cube.add(group);
+        }
+
+        if (type === 'nuke') {
+            cube.userData.isNuke = true;
+            cube.userData.fireDir = direction;
+            
+            const group = new THREE.Group();
+            const quaternion = new THREE.Quaternion();
+            quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+            group.setRotationFromQuaternion(quaternion);
+            group.position.add(direction.clone().multiplyScalar(0.3));
+
+            const headGeo = new THREE.SphereGeometry(0.35, 16, 16);
+            const headMat = new THREE.MeshStandardMaterial({ color: 0x880000, roughness: 0.4, metalness: 0.5 });
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.scale.y = 1.3;
+            head.position.y = 0.2;
+            group.add(head);
+
+            const baseGeo = new THREE.CylinderGeometry(0.2, 0.3, 0.4, 8);
+            const baseMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+            const base = new THREE.Mesh(baseGeo, baseMat);
+            base.position.y = -0.3;
+            group.add(base);
+
+            cube.add(group);
         }
 
         robotGroup.add(cube);
@@ -497,7 +559,14 @@
                         for (let j = enemy.cubes.length - 1; j >= 0; j--) {
                             const c = enemy.cubes[j];
                             const worldPos = c.position.clone().applyMatrix4(enemy.group.matrixWorld);
-                            if (worldPos.distanceTo(b.position) < 0.8) {
+                            const hitDist = b.userData.isNukeBullet ? 1.5 : 0.8;
+                            if (worldPos.distanceTo(b.position) < hitDist) {
+                                if (b.userData.isNukeBullet) {
+                                    explodeNuke(b.position);
+                                    hitEnemy = true;
+                                    break;
+                                }
+
                                 createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), c.material.color.getHex(), 0.3, 30);
                                 
                                 if (c.userData.type === 'core') {
@@ -615,6 +684,63 @@
         setPress(boostBtn, v => isBoosting = v);
         fireBtn.addEventListener('touchstart', e=>{e.preventDefault(); fireBullet()});
         fireBtn.addEventListener('mousedown', ()=>fireBullet());
+        
+        const nukeBtn = document.getElementById('nuke-btn');
+        nukeBtn.addEventListener('touchstart', e=>{e.preventDefault(); fireNuke()});
+        nukeBtn.addEventListener('mousedown', ()=>fireNuke());
+    }
+
+    function fireNuke() {
+        if(!isBattleMode) return;
+        
+        cubes.forEach(c => {
+            if (c.userData.isNuke) {
+                const fireDir = c.userData.fireDir.clone().applyQuaternion(robotGroup.quaternion).normalize();
+                
+                const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), c.userData.fireDir);
+                const worldQ = robotGroup.quaternion.clone().multiply(q);
+                const offset = new THREE.Vector3(0, 0.6, 0).applyQuaternion(worldQ);
+                const spawnPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld).add(offset);
+
+                const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+                bullet.position.copy(spawnPos);
+                bullet.userData = { vel: fireDir.clone().multiplyScalar(0.8), life: 300, isPlayer: true, isNukeBullet: true };
+                scene.add(bullet);
+                bullets.push(bullet);
+                createParticle(bullet.position, fireDir.clone().multiplyScalar(0.2), 0xff0000, 0.6, 30);
+            }
+        });
+    }
+
+    function explodeNuke(pos) {
+        const blastRadius = 8.0;
+        
+        for(let m=0; m<50; m++) {
+            const pDir = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(0.5);
+            createParticle(pos, pDir, 0xff5500, 0.8 + Math.random(), 60);
+        }
+
+        for (let k = enemies.length - 1; k >= 0; k--) {
+            const enemy = enemies[k];
+            if (enemy.group.position.distanceTo(pos) > blastRadius + 5) continue; 
+            
+            let coreDestroyed = false;
+            for (let j = enemy.cubes.length - 1; j >= 0; j--) {
+                const c = enemy.cubes[j];
+                const worldPos = c.position.clone().applyMatrix4(enemy.group.matrixWorld);
+                if (worldPos.distanceTo(pos) < blastRadius) {
+                    createParticle(worldPos, worldPos.clone().sub(pos).normalize().multiplyScalar(0.5), c.material.color.getHex(), 0.5, 40);
+                    if (c.userData.type === 'core') coreDestroyed = true;
+                    enemy.group.remove(c);
+                    enemy.cubes.splice(j, 1);
+                }
+            }
+            
+            if (coreDestroyed || enemy.cubes.length === 0) {
+                 scene.remove(enemy.group);
+                 enemies.splice(k, 1);
+            }
+        }
     }
 
     function fireBullet(isPlayer = true, sourceGroup = null, sourceCubes = null) {
@@ -626,14 +752,38 @@
 
         firingCubes.forEach(c => {
             if (c.userData.isTurret) {
-                const worldPos = c.position.clone().applyMatrix4(firingGroup.matrixWorld);
                 const fireDir = c.userData.fireDir.clone().applyQuaternion(firingGroup.quaternion).normalize();
-                const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshBasicMaterial({ color: color }));
-                bullet.position.copy(worldPos).add(fireDir.clone().multiplyScalar(0.8));
-                bullet.userData = { vel: fireDir.multiplyScalar(2.0), life: 120, isPlayer: isPlayer };
-                scene.add(bullet);
-                bullets.push(bullet);
-                createParticle(bullet.position, fireDir.multiplyScalar(0.5), color, 0.4, 10);
+                
+                if (c.userData.subType === 'triple') {
+                    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), c.userData.fireDir);
+                    const worldQ = firingGroup.quaternion.clone().multiply(q);
+                    
+                    const localOffsets = [
+                        new THREE.Vector3(0, 0.4, -0.15), 
+                        new THREE.Vector3(-0.15, 0.4, 0.1), 
+                        new THREE.Vector3(0.15, 0.4, 0.1)
+                    ];
+                    
+                    localOffsets.forEach(off => {
+                         const worldOffset = off.clone().applyQuaternion(worldQ);
+                         const spawnPos = c.position.clone().applyMatrix4(firingGroup.matrixWorld).add(worldOffset);
+                         
+                         const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshBasicMaterial({ color: color }));
+                         bullet.position.copy(spawnPos);
+                         bullet.userData = { vel: fireDir.clone().multiplyScalar(2.0), life: 120, isPlayer: isPlayer };
+                         scene.add(bullet);
+                         bullets.push(bullet);
+                         createParticle(bullet.position, fireDir.clone().multiplyScalar(0.5), color, 0.3, 10);
+                    });
+                } else {
+                    const worldPos = c.position.clone().applyMatrix4(firingGroup.matrixWorld);
+                    const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshBasicMaterial({ color: color }));
+                    bullet.position.copy(worldPos).add(fireDir.clone().multiplyScalar(0.8));
+                    bullet.userData = { vel: fireDir.multiplyScalar(2.0), life: 120, isPlayer: isPlayer };
+                    scene.add(bullet);
+                    bullets.push(bullet);
+                    createParticle(bullet.position, fireDir.multiplyScalar(0.5), color, 0.4, 10);
+                }
             }
         });
     }
