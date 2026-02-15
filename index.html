@@ -122,8 +122,10 @@ if ('serviceWorker' in navigator) {
 
     
     let inputVector = { x: 0, y: 0 };
+    let keys = {};
     let isBoosting = false;
     let velocity = new THREE.Vector3();
+    let currentAngularVelocity = new THREE.Vector3();
     let camLat = 0.5, camLon = 0.5;
     let shakeIntensity = 0;
 
@@ -200,6 +202,9 @@ if ('serviceWorker' in navigator) {
         canvas.addEventListener('pointerdown', onPointerDown, false);
         canvas.addEventListener('pointermove', onPointerMove, false);
         canvas.addEventListener('pointerup', onPointerUp, false);
+
+        window.addEventListener('keydown', e => keys[e.code] = true);
+        window.addEventListener('keyup', e => keys[e.code] = false);
 
         document.getElementById('mode-btn').addEventListener('click', toggleMode);
         document.getElementById('save-btn').addEventListener('click', saveRobot);
@@ -550,13 +555,59 @@ if ('serviceWorker' in navigator) {
         camera.lookAt(0, 0, 0);
     }
 
+    function getInputState() {
+        const move = { x: 0, y: 0 };
+        const aim = { x: 0, y: 0 };
+        let fire = false;
+        let boost = false;
+
+        // Gamepad
+        if (Math.abs(gamepadVector.x) > 0.1) move.x = gamepadVector.x;
+        if (Math.abs(gamepadVector.y) > 0.1) move.y = gamepadVector.y;
+        if (Math.abs(gamepadRightVector.x) > 0.1) aim.x = gamepadRightVector.x;
+        if (Math.abs(gamepadRightVector.y) > 0.1) aim.y = gamepadRightVector.y;
+        if (gamepadFireState.all) fire = true;
+        if (isGamepadBoosting) boost = true;
+
+        // Touch
+        if (Math.abs(inputVector.x) > 0.01 || Math.abs(inputVector.y) > 0.01) {
+            move.x = inputVector.x;
+            move.y = inputVector.y;
+        }
+
+        // Keyboard
+        if (keys['KeyW']) move.y = -1;
+        if (keys['KeyS']) move.y = 1;
+        if (keys['KeyA']) move.x = -1;
+        if (keys['KeyD']) move.x = 1;
+
+        if (keys['ArrowUp']) aim.y = -1;
+        if (keys['ArrowDown']) aim.y = 1;
+        if (keys['ArrowLeft']) aim.x = -1;
+        if (keys['ArrowRight']) aim.x = 1;
+
+        if (keys['Space']) fire = true;
+        if (keys['ShiftLeft']) boost = true;
+
+        // Normalize
+        const moveLen = Math.sqrt(move.x*move.x + move.y*move.y);
+        if (moveLen > 1) { move.x /= moveLen; move.y /= moveLen; }
+
+        const aimLen = Math.sqrt(aim.x*aim.x + aim.y*aim.y);
+        if (aimLen > 1) { aim.x /= aimLen; aim.y /= aimLen; }
+
+        return { move, aim, fire, boost };
+    }
+
     function animate() {
         requestAnimationFrame(animate);
         if (isBattleMode) {
             updateGamepad();
             updateWeapons();
 
-            const fireAll = inputState.fireAll || gamepadFireState.all;
+            const input = getInputState();
+
+            const fireAll = input.fire || inputState.fireAll; // Combined fire
             const fireNormal = inputState.fireNormal || gamepadFireState.normal;
             const fireTriple = inputState.fireTriple || gamepadFireState.triple;
             const fireMissile = inputState.fireMissile || gamepadFireState.missile;
@@ -570,28 +621,33 @@ if ('serviceWorker' in navigator) {
             if (fireTriple) attemptFire('triple');
             if (fireMissile) attemptFire('missile');
 
-            const moveSpeed = 0.05;
-            // Merge inputs (Touch + Gamepad)
-            let mx = inputVector.x;
-            let my = inputVector.y;
-            if (Math.abs(gamepadVector.x) > 0.1) mx = gamepadVector.x;
-            if (Math.abs(gamepadVector.y) > 0.1) my = gamepadVector.y;
+            // Physics Constants
+            const moveAccel = 0.15;
+            const friction = 0.95;
+            const rotAccel = 0.1;
+            const maxRotSpeed = 0.05;
 
+            // Movement
+            let mx = input.move.x;
+            let my = input.move.y;
             const moveDir = new THREE.Vector3(mx, 0, my);
             moveDir.applyQuaternion(robotGroup.quaternion);
-            velocity.add(moveDir.multiplyScalar(moveSpeed));
-            robotGroup.rotateZ(-mx * 0.02);
+            velocity.add(moveDir.multiplyScalar(moveAccel));
+            velocity.multiplyScalar(friction);
 
-            // Right Stick Camera Rotation
-            const rx = gamepadRightVector.x;
-            const ry = gamepadRightVector.y;
-            if (Math.abs(rx) > 0.1 || Math.abs(ry) > 0.1) {
-                const rotSpeed = 0.03;
-                robotGroup.rotateY(-rx * rotSpeed);
-                robotGroup.rotateX(-ry * rotSpeed);
-            }
+            // Rotation
+            const rx = input.aim.x;
+            const ry = input.aim.y;
+            const targetYaw = -rx * maxRotSpeed;
+            const targetPitch = -ry * maxRotSpeed;
+            
+            currentAngularVelocity.y += (targetYaw - currentAngularVelocity.y) * rotAccel;
+            currentAngularVelocity.x += (targetPitch - currentAngularVelocity.x) * rotAccel;
 
-            if (isBoosting || isGamepadBoosting) {
+            robotGroup.rotateY(currentAngularVelocity.y);
+            robotGroup.rotateX(currentAngularVelocity.x);
+
+            if (input.boost || isBoosting) {
                 let totalThrust = new THREE.Vector3(0,0,0);
                 cubes.forEach(c => {
                     if (c.userData.isEngine) {
@@ -619,12 +675,17 @@ if ('serviceWorker' in navigator) {
             }
 
             robotGroup.position.add(velocity);
-            velocity.multiplyScalar(0.98);
 
             const offset = new THREE.Vector3(0, 15, 30);
             offset.applyQuaternion(robotGroup.quaternion);
-            camera.position.lerp(robotGroup.position.clone().add(offset), 0.1);
+            const targetPos = robotGroup.position.clone().add(offset);
+            camera.position.lerp(targetPos, 0.05);
+
+            const currentQ = camera.quaternion.clone();
             camera.lookAt(robotGroup.position);
+            const targetQ = camera.quaternion.clone();
+            camera.quaternion.copy(currentQ);
+            camera.quaternion.slerp(targetQ, 0.1);
 
             spawnTimer++;
             if (spawnTimer > 200 && enemies.length < 5) {
