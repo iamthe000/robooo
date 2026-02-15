@@ -621,7 +621,7 @@ if ('serviceWorker' in navigator) {
             robotGroup.position.add(velocity);
             velocity.multiplyScalar(0.98);
 
-            const offset = new THREE.Vector3(0, 3, 9);
+            const offset = new THREE.Vector3(0, 5, 12);
             offset.applyQuaternion(robotGroup.quaternion);
             camera.position.lerp(robotGroup.position.clone().add(offset), 0.1);
             camera.lookAt(robotGroup.position);
