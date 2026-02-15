@@ -22,6 +22,10 @@
 
         
         #palette-container { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 5px; pointer-events: none; width: 90%; }
+        #color-palette { display: flex; gap: 5px; margin-bottom: 5px; pointer-events: auto; background: rgba(0,0,0,0.5); padding: 5px; border-radius: 20px; }
+        .color-swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #555; cursor: pointer; transition: 0.2s; }
+        .color-swatch.selected { border-color: white; transform: scale(1.2); box-shadow: 0 0 8px white; }
+        #color-picker { width: 30px; height: 30px; border: none; padding: 0; background: none; cursor: pointer; border-radius: 50%; overflow: hidden; }
         #palette { display: flex; gap: 10px; background: rgba(30, 30, 30, 0.9); padding: 10px; border-radius: 30px; pointer-events: auto; border: 1px solid rgba(255,255,255,0.2); overflow-x: auto; max-width: 100%; }
         .palette-item { min-width: 45px; height: 45px; border-radius: 8px; border: 2px solid #555; cursor: pointer; transition: 0.2s; position: relative; display: flex; align-items: center; justify-content: center; font-size: 10px; color: rgba(255,255,255,0.7); background: #333; }
         .palette-item.selected { border-color: white; transform: scale(1.1); z-index: 10; color: white; box-shadow: 0 0 10px white; }
@@ -76,6 +80,18 @@ if ('serviceWorker' in navigator) {
 
     <div id="palette-container">
         <div id="build-msg">SAVEで保存 / LOADで読込</div>
+        
+        <div id="color-palette">
+            <div class="color-swatch selected" style="background:#00ccff" onclick="selectColor(0x00ccff, this)"></div>
+            <div class="color-swatch" style="background:#ff0000" onclick="selectColor(0xff0000, this)"></div>
+            <div class="color-swatch" style="background:#00ff00" onclick="selectColor(0x00ff00, this)"></div>
+            <div class="color-swatch" style="background:#0000ff" onclick="selectColor(0x0000ff, this)"></div>
+            <div class="color-swatch" style="background:#ffff00" onclick="selectColor(0xffff00, this)"></div>
+            <div class="color-swatch" style="background:#ffffff" onclick="selectColor(0xffffff, this)"></div>
+            <div class="color-swatch" style="background:#ff00ff" onclick="selectColor(0xff00ff, this)"></div>
+            <input type="color" id="color-picker" value="#00ccff" onchange="selectColor(parseInt(this.value.replace('#','0x'),16), this)">
+        </div>
+
         <div id="palette">
             <div id="p-normal" class="palette-item selected" onclick="selectBlock('normal')">BLOCK</div>
             <div id="p-armor" class="palette-item" onclick="selectBlock('armor')">ARMOR</div>
@@ -119,6 +135,7 @@ if ('serviceWorker' in navigator) {
 
     
     let currentBlockType = 'normal';
+    let currentBlockColor = 0x00ccff;
 
     
     let inputVector = { x: 0, y: 0 };
@@ -258,7 +275,7 @@ if ('serviceWorker' in navigator) {
                 y: c.position.y,
                 z: c.position.z,
                 type: c.userData.type, 
-                
+                color: c.userData.origColor,
                 dir: c.userData.direction ? {x: c.userData.direction.x, y: c.userData.direction.y, z: c.userData.direction.z} : {x:0,y:1,z:0}
             };
         });
@@ -290,7 +307,7 @@ if ('serviceWorker' in navigator) {
                 
                 data.forEach(d => {
                     const dirVec = new THREE.Vector3(d.dir.x, d.dir.y, d.dir.z);
-                    addCube(d.x, d.y, d.z, d.type, dirVec);
+                    addCube(d.x, d.y, d.z, d.type, dirVec, d.color);
                 });
                 
                 
@@ -367,7 +384,18 @@ if ('serviceWorker' in navigator) {
         document.getElementById('p-' + type).classList.add('selected');
     }
 
-    function addCube(x, y, z, type, direction) {
+    function selectColor(hex, el) {
+        currentBlockColor = hex;
+        document.querySelectorAll('.color-swatch').forEach(e => e.classList.remove('selected'));
+        document.getElementById('color-picker').parentElement.querySelectorAll('.selected').forEach(e => e.classList.remove('selected')); // Double check cleanup
+        if (el.tagName === 'DIV') {
+            el.classList.add('selected');
+        } else {
+             // If from color picker, maybe highlight the picker or nothing
+        }
+    }
+
+    function addCube(x, y, z, type, direction, colorOverride = null) {
         
         const exists = cubes.some(c => Math.abs(c.position.x - x) < 0.1 && Math.abs(c.position.y - y) < 0.1 && Math.abs(c.position.z - z) < 0.1);
         if(exists) return;
@@ -380,6 +408,11 @@ if ('serviceWorker' in navigator) {
         if (type === 'engine') { color = 0xff3300; emissive = 0x330000; }
         if (type === 'turret') { color = 0xffd700; emissive = 0x332200; }
         if (type === 'triple') { color = 0xffaa00; emissive = 0x332200; }
+        
+        if (colorOverride !== null && colorOverride !== undefined) {
+            color = colorOverride;
+        }
+
         if (x===0 && y===0 && z===0) color = 0x00ff00; 
 
         const material = new THREE.MeshStandardMaterial({ 
@@ -560,7 +593,11 @@ if ('serviceWorker' in navigator) {
             
             const face = intersect.face;
             const newPos = obj.position.clone().add(face.normal);
-            addCube(newPos.x, newPos.y, newPos.z, currentBlockType, face.normal);
+            
+            let override = null;
+            if (currentBlockType === 'normal') override = currentBlockColor;
+            
+            addCube(newPos.x, newPos.y, newPos.z, currentBlockType, face.normal, override);
         }
     }
 
