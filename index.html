@@ -678,14 +678,10 @@ if ('serviceWorker' in navigator) {
 
             const offset = new THREE.Vector3(0, 15, 30);
             offset.applyQuaternion(robotGroup.quaternion);
-            const targetPos = robotGroup.position.clone().add(offset);
-            camera.position.lerp(targetPos, 0.05);
-
-            const currentQ = camera.quaternion.clone();
+            camera.position.copy(robotGroup.position).add(offset);
+            
+            camera.up.set(0, 1, 0).applyQuaternion(robotGroup.quaternion);
             camera.lookAt(robotGroup.position);
-            const targetQ = camera.quaternion.clone();
-            camera.quaternion.copy(currentQ);
-            camera.quaternion.slerp(targetQ, 0.1);
 
             spawnTimer++;
             if (spawnTimer > 200 && enemies.length < 5) {
