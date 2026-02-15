@@ -27,6 +27,7 @@
         .palette-item.selected { border-color: white; transform: scale(1.1); z-index: 10; color: white; box-shadow: 0 0 10px white; }
         
         #p-normal { background: #00ccff; }
+        #p-armor { background: #888888; }
         #p-engine { background: #ff4400; }
         #p-turret { background: #ffd700; }
         #p-triple { background: #ffaa00; }
@@ -75,6 +76,7 @@ if ('serviceWorker' in navigator) {
         <div id="build-msg">SAVEで保存 / LOADで読込</div>
         <div id="palette">
             <div id="p-normal" class="palette-item selected" onclick="selectBlock('normal')">BLOCK</div>
+            <div id="p-armor" class="palette-item" onclick="selectBlock('armor')">ARMOR</div>
             <div id="p-engine" class="palette-item" onclick="selectBlock('engine')">ENGINE</div>
             <div id="p-turret" class="palette-item" onclick="selectBlock('turret')">TURRET</div>
             <div id="p-triple" class="palette-item" onclick="selectBlock('triple')">TRIPLE</div>
@@ -344,6 +346,7 @@ if ('serviceWorker' in navigator) {
         let color = 0x00ccff;
         let emissive = 0x000000;
 
+        if (type === 'armor') { color = 0x888888; }
         if (type === 'engine') { color = 0xff3300; emissive = 0x330000; }
         if (type === 'turret') { color = 0xffd700; emissive = 0x332200; }
         if (type === 'triple') { color = 0xffaa00; emissive = 0x332200; }
@@ -356,12 +359,14 @@ if ('serviceWorker' in navigator) {
         const cube = new THREE.Mesh(geometry, material);
         cube.position.set(x, y, z);
         
+        let hp = 3;
+        if (type === 'armor') hp = 10;
         
         cube.userData = { 
             type: type, 
             direction: direction,
-            hp: 3,
-            maxHp: 3,
+            hp: hp,
+            maxHp: hp,
             isDead: false,
             respawnTimer: 0,
             origColor: color
