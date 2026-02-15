@@ -217,15 +217,32 @@ if ('serviceWorker' in navigator) {
     }
 
     function createStars() {
-        const starGeo = new THREE.BufferGeometry();
-        const starCount = 3000;
-        const posArray = new Float32Array(starCount * 3);
-        for(let i=0; i<starCount*3; i++) {
-            posArray[i] = (Math.random() - 0.5) * 1000;
+        stars = new THREE.Group();
+        
+        // Background layer (smaller, denser)
+        const bgGeo = new THREE.BufferGeometry();
+        const bgCount = 15000;
+        const bgPos = new Float32Array(bgCount * 3);
+        for(let i=0; i<bgCount*3; i++) {
+            bgPos[i] = (Math.random() - 0.5) * 3000; 
         }
-        starGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-        const starMat = new THREE.PointsMaterial({color: 0xaaaaaa, size: 0.8, transparent: true});
-        stars = new THREE.Points(starGeo, starMat);
+        bgGeo.setAttribute('position', new THREE.BufferAttribute(bgPos, 3));
+        const bgMat = new THREE.PointsMaterial({color: 0xaaaaaa, size: 0.5, transparent: true, opacity: 0.8});
+        const bgStars = new THREE.Points(bgGeo, bgMat);
+        stars.add(bgStars);
+
+        // Foreground layer (larger, brighter, fewer)
+        const fgGeo = new THREE.BufferGeometry();
+        const fgCount = 2000;
+        const fgPos = new Float32Array(fgCount * 3);
+        for(let i=0; i<fgCount*3; i++) {
+            fgPos[i] = (Math.random() - 0.5) * 3000;
+        }
+        fgGeo.setAttribute('position', new THREE.BufferAttribute(fgPos, 3));
+        const fgMat = new THREE.PointsMaterial({color: 0xffffff, size: 1.2, transparent: true, opacity: 0.9});
+        const fgStars = new THREE.Points(fgGeo, fgMat);
+        stars.add(fgStars);
+
         scene.add(stars);
     }
 
