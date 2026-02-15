@@ -31,6 +31,7 @@
         #p-engine { background: #ff4400; }
         #p-turret { background: #ffd700; }
         #p-triple { background: #ffaa00; }
+        #p-missile { background: #9933ff; }
         #p-delete { background: #333; border-color: #ff0000; color: #ff0000; font-weight: bold; } 
         
         #build-msg { text-align: center; font-size: 12px; opacity: 0.8; text-shadow: 1px 1px 2px black; margin-bottom: 5px; }
@@ -43,6 +44,7 @@
         #fire-btn { position: absolute; bottom: 140px; right: 50px; width: 60px; height: 60px; border-radius: 50%; background: rgba(255, 215, 0, 0.2); border: 2px solid gold; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; pointer-events: auto; color: gold; box-shadow: 0 0 10px gold; }
         #normal-btn { position: absolute; bottom: 50px; right: 130px; width: 60px; height: 60px; border-radius: 50%; background: rgba(0, 204, 255, 0.2); border: 2px solid #00ccff; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; pointer-events: auto; color: #00ccff; box-shadow: 0 0 10px #00ccff; }
         #triple-btn { position: absolute; bottom: 140px; right: 130px; width: 60px; height: 60px; border-radius: 50%; background: rgba(255, 170, 0, 0.2); border: 2px solid #ffaa00; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; pointer-events: auto; color: #ffaa00; box-shadow: 0 0 10px #ffaa00; }
+        #missile-btn { position: absolute; bottom: 230px; right: 50px; width: 60px; height: 60px; border-radius: 50%; background: rgba(153, 51, 255, 0.2); border: 2px solid #9933ff; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; pointer-events: auto; color: #9933ff; box-shadow: 0 0 10px #9933ff; }
         
         #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; transform: translate(-50%, -50%); pointer-events: none; border: 1px solid rgba(255,255,255,0.5); border-radius: 50%; opacity: 0; }
 
@@ -80,6 +82,7 @@ if ('serviceWorker' in navigator) {
             <div id="p-engine" class="palette-item" onclick="selectBlock('engine')">ENGINE</div>
             <div id="p-turret" class="palette-item" onclick="selectBlock('turret')">TURRET</div>
             <div id="p-triple" class="palette-item" onclick="selectBlock('triple')">TRIPLE</div>
+            <div id="p-missile" class="palette-item" onclick="selectBlock('missile')">MISSILE</div>
             <div id="p-delete" class="palette-item" onclick="selectBlock('delete')">DEL</div>
         </div>
     </div>
@@ -91,6 +94,7 @@ if ('serviceWorker' in navigator) {
         <div id="stick-area"><div id="stick-knob"></div></div>
         <div id="normal-btn" class="btn">NORMAL</div>
         <div id="triple-btn" class="btn">TRIPLE</div>
+        <div id="missile-btn" class="btn">MISSILE</div>
         <div id="fire-btn" class="btn">ALL FIRE</div>
         <div id="boost-btn" class="btn">BOOST</div>
     </div>
@@ -132,23 +136,27 @@ if ('serviceWorker' in navigator) {
     // Weapon Stats & State
     const WEAPON_STATS = {
         normal: { fireDelay: 15, maxAmmo: 50, reloadTime: 120 }, // Slower fire, larger mag
-        triple: { fireDelay: 5, maxAmmo: 25, reloadTime: 90 }    // Fast fire, smaller mag (frequent reload)
+        triple: { fireDelay: 5, maxAmmo: 25, reloadTime: 90 },    // Fast fire, smaller mag (frequent reload)
+        missile: { fireDelay: 30, maxAmmo: 1, reloadTime: 0 } // Reload is per-block
     };
 
     let weaponState = {
         normal: { cooldown: 0, ammo: 50, reloadTimer: 0 },
-        triple: { cooldown: 0, ammo: 25, reloadTimer: 0 }
+        triple: { cooldown: 0, ammo: 25, reloadTimer: 0 },
+        missile: { cooldown: 0, ammo: 1, reloadTimer: 0 }
     };
     
     let inputState = {
         fireNormal: false,
         fireTriple: false,
+        fireMissile: false,
         fireAll: false
     };
 
     let gamepadFireState = {
         normal: false,
         triple: false,
+        missile: false,
         all: false
     };
     
@@ -427,6 +435,35 @@ if ('serviceWorker' in navigator) {
             cube.add(group);
         }
 
+        if (type === 'missile') {
+            cube.userData.isTurret = true;
+            cube.userData.subType = 'missile';
+            cube.userData.fireDir = direction;
+            cube.userData.reloadTimer = 0;
+            cube.userData.missileReloadTime = 300; // Long reload
+
+            const group = new THREE.Group();
+            const quaternion = new THREE.Quaternion();
+            quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+            group.setRotationFromQuaternion(quaternion);
+            group.position.add(direction.clone().multiplyScalar(0.2)); 
+            
+            // Pod Body
+            const podGeo = new THREE.BoxGeometry(0.5, 0.5, 0.8);
+            const podMat = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.7 });
+            const pod = new THREE.Mesh(podGeo, podMat);
+            group.add(pod);
+
+            // Cap (Launcher Face)
+            const capGeo = new THREE.BoxGeometry(0.4, 0.4, 0.1);
+            const capMat = new THREE.MeshBasicMaterial({ color: 0x222222 }); 
+            const cap = new THREE.Mesh(capGeo, capMat);
+            cap.position.z = 0.4; // Front
+            group.add(cap);
+
+            cube.add(group);
+        }
+
         robotGroup.add(cube);
         cubes.push(cube);
     }
@@ -513,13 +550,16 @@ if ('serviceWorker' in navigator) {
             const fireAll = inputState.fireAll || gamepadFireState.all;
             const fireNormal = inputState.fireNormal || gamepadFireState.normal;
             const fireTriple = inputState.fireTriple || gamepadFireState.triple;
+            const fireMissile = inputState.fireMissile || gamepadFireState.missile;
             
             if (fireAll) {
                 attemptFire('normal');
                 attemptFire('triple');
+                attemptFire('missile');
             }
             if (fireNormal) attemptFire('normal');
             if (fireTriple) attemptFire('triple');
+            if (fireMissile) attemptFire('missile');
 
             const moveSpeed = 0.05;
             // Merge inputs (Touch + Gamepad)
@@ -601,6 +641,36 @@ if ('serviceWorker' in navigator) {
 
             for (let i = bullets.length - 1; i >= 0; i--) {
                 const b = bullets[i];
+
+                if (b.userData.isMissile) {
+                    // Homing Logic
+                    if (!b.userData.target || (b.userData.target.parent === null && b.userData.target !== robotGroup)) {
+                        b.userData.target = findNearestEnemy(b.position, b.userData.isPlayer);
+                    }
+                    
+                    if (b.userData.target) {
+                        const targetPos = b.userData.target.position.clone();
+                        const desiredDir = targetPos.sub(b.position).normalize();
+                        const currentDir = b.userData.vel.clone().normalize();
+                        
+                        // Steer
+                        const steer = desiredDir.sub(currentDir).multiplyScalar(b.userData.turnRate || 0.1);
+                        const newDir = currentDir.add(steer).normalize();
+                        
+                        // Accelerate
+                        let speed = b.userData.vel.length();
+                        if (speed < (b.userData.maxSpeed || 1.5)) speed *= (b.userData.accel || 1.05);
+                        
+                        b.userData.vel.copy(newDir.multiplyScalar(speed));
+                        b.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), newDir);
+                    }
+                    
+                    // Smoke Trail
+                    if(Math.random() > 0.3) {
+                        createParticle(b.position, new THREE.Vector3(0,0,0), 0xaaaaaa, 0.4, 20, 'smoke');
+                    }
+                }
+
                 b.position.add(b.userData.vel);
                 b.userData.life--;
 
@@ -710,6 +780,9 @@ if ('serviceWorker' in navigator) {
             });
             
             cubes.forEach(c => {
+                // Update Reload Timer
+                if (c.userData.reloadTimer > 0) c.userData.reloadTimer--;
+
                 if (c.userData.isDead) {
                     c.userData.respawnTimer--;
                     if (c.userData.respawnTimer <= 0) {
@@ -755,6 +828,7 @@ if ('serviceWorker' in navigator) {
         const fireBtn = document.getElementById('fire-btn');
         const normalBtn = document.getElementById('normal-btn');
         const tripleBtn = document.getElementById('triple-btn');
+        const missileBtn = document.getElementById('missile-btn');
 
         const setPress = (el, val) => {
             el.addEventListener('touchstart', e=>{e.preventDefault(); val(true)}, {passive:false});
@@ -768,6 +842,7 @@ if ('serviceWorker' in navigator) {
         setPress(fireBtn, v => inputState.fireAll = v);
         setPress(normalBtn, v => inputState.fireNormal = v);
         setPress(tripleBtn, v => inputState.fireTriple = v);
+        setPress(missileBtn, v => inputState.fireMissile = v);
     }
 
     function updateGamepad() {
@@ -791,14 +866,34 @@ if ('serviceWorker' in navigator) {
         // 7: R2/RT -> All Fire
         // 5: R1/RB -> Normal Fire
         // 4: L1/LB -> Triple Fire
+        // 6: L2/LT -> Missile Fire
         gamepadFireState.all = gp.buttons[7].pressed;
         gamepadFireState.normal = gp.buttons[5].pressed;
         gamepadFireState.triple = gp.buttons[4].pressed;
+        gamepadFireState.missile = gp.buttons[6].pressed;
 
         // Save state (only needed if we need edges, but currently not needed for continuous fire)
         for (let i = 0; i < gp.buttons.length; i++) {
             prevGamepadButtons[i] = gp.buttons[i].pressed;
         }
+    }
+
+    function findNearestEnemy(pos, isPlayer) {
+        let nearest = null;
+        let minDist = Infinity;
+
+        if (isPlayer) {
+            enemies.forEach(e => {
+                const dist = e.group.position.distanceTo(pos);
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearest = e.group;
+                }
+            });
+        } else {
+            nearest = robotGroup;
+        }
+        return nearest;
     }
 
     function fireBullet(targetTypeOrIsPlayer = true, sourceGroup = null, sourceCubes = null) {
@@ -832,12 +927,43 @@ if ('serviceWorker' in navigator) {
                 
                 // 発射対象のフィルタリング
                 const isTriple = (c.userData.subType === 'triple');
-                if (targetType === 'normal' && isTriple) return;
+                const isMissile = (c.userData.subType === 'missile');
+
+                if (targetType === 'normal' && (isTriple || isMissile)) return;
                 if (targetType === 'triple' && !isTriple) return;
+                if (targetType === 'missile' && !isMissile) return;
 
                 const fireDir = c.userData.fireDir.clone().applyQuaternion(firingGroup.quaternion).normalize();
                 
-                if (isTriple) {
+                if (isMissile) {
+                    if (c.userData.reloadTimer > 0) return;
+                    c.userData.reloadTimer = c.userData.missileReloadTime; // Set reload timer
+
+                    const spawnPos = c.position.clone().applyMatrix4(firingGroup.matrixWorld).add(fireDir.clone().multiplyScalar(0.6));
+                    const missileGeo = new THREE.BoxGeometry(0.2, 0.2, 0.6);
+                    const missile = new THREE.Mesh(missileGeo, new THREE.MeshBasicMaterial({ color: color }));
+                    missile.position.copy(spawnPos);
+                    
+                    // Look at fire direction
+                    const targetQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), fireDir);
+                    missile.quaternion.copy(targetQ);
+
+                    missile.userData = { 
+                        vel: fireDir.clone().multiplyScalar(0.3), // Start slow
+                        maxSpeed: 1.2,
+                        turnRate: 0.1,
+                        life: 300, 
+                        isPlayer: isPlayer, 
+                        isMissile: true,
+                        target: findNearestEnemy(spawnPos, isPlayer)
+                    };
+                    scene.add(missile);
+                    bullets.push(missile);
+
+                    createParticle(spawnPos, fireDir.clone().multiplyScalar(0.2), 0xaaaaaa, 0.5, 20, 'smoke');
+                    return;
+
+                } else if (isTriple) {
                     const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), c.userData.fireDir);
                     const worldQ = firingGroup.quaternion.clone().multiply(q);
                     
@@ -982,7 +1108,7 @@ if ('serviceWorker' in navigator) {
     }
 
     function updateWeapons() {
-        const types = ['normal', 'triple'];
+        const types = ['normal', 'triple', 'missile'];
         types.forEach(type => {
             const state = weaponState[type];
             const stats = WEAPON_STATS[type];
@@ -1002,11 +1128,15 @@ if ('serviceWorker' in navigator) {
         if (ammoDiv) {
             const nState = weaponState.normal;
             const tState = weaponState.triple;
+            const mState = weaponState.missile;
             
             let nText = nState.reloadTimer > 0 ? "RELOAD" : nState.ammo;
             let tText = tState.reloadTimer > 0 ? "RELOAD" : tState.ammo;
-            
-            ammoDiv.innerHTML = `<span style="color:${nState.reloadTimer>0?'red':'cyan'}">NRM: ${nText}</span><br><span style="color:${tState.reloadTimer>0?'red':'orange'}">TRP: ${tText}</span>`;
+            let mText = mState.reloadTimer > 0 ? "RELOAD" : "READY"; // Missile uses per-block reload, but global state can show ready
+
+            ammoDiv.innerHTML = `<span style="color:${nState.reloadTimer>0?'red':'cyan'}">NRM: ${nText}</span><br>` +
+                                `<span style="color:${tState.reloadTimer>0?'red':'orange'}">TRP: ${tText}</span><br>` + 
+                                `<span style="color:${mState.reloadTimer>0?'red':'#9933ff'}">MSL: ${mText}</span>`;
         }
     }
 
