@@ -137,7 +137,7 @@ if ('serviceWorker' in navigator) {
     const WEAPON_STATS = {
         normal: { fireDelay: 15, maxAmmo: 50, reloadTime: 120 }, // Slower fire, larger mag
         triple: { fireDelay: 5, maxAmmo: 25, reloadTime: 90 },    // Fast fire, smaller mag (frequent reload)
-        missile: { fireDelay: 30, maxAmmo: 1, reloadTime: 0 } // Reload is per-block
+        missile: { fireDelay: 30, maxAmmo: 1, reloadTime: 1 } // Reload is per-block, global reset needed
     };
 
     let weaponState = {
