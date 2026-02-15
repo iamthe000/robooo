@@ -541,6 +541,8 @@ if ('serviceWorker' in navigator) {
                 let totalThrust = new THREE.Vector3(0,0,0);
                 cubes.forEach(c => {
                     if (c.userData.isEngine) {
+                        if (c.userData.isDead) return;
+                        
                         const forceDir = c.userData.thrustDir.clone().applyQuaternion(robotGroup.quaternion).negate();
                         totalThrust.add(forceDir);
                         
@@ -821,6 +823,8 @@ if ('serviceWorker' in navigator) {
 
         firingCubes.forEach(c => {
             if (c.userData.isTurret) {
+                if (c.userData.isDead) return;
+                
                 // 発射対象のフィルタリング
                 const isTriple = (c.userData.subType === 'triple');
                 if (targetType === 'normal' && isTriple) return;
