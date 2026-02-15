@@ -247,7 +247,7 @@ if ('serviceWorker' in navigator) {
             bgPos[i] = (Math.random() - 0.5) * 3000; 
         }
         bgGeo.setAttribute('position', new THREE.BufferAttribute(bgPos, 3));
-        const bgMat = new THREE.PointsMaterial({color: 0xaaaaaa, size: 0.5, transparent: true, opacity: 0.8});
+        const bgMat = new THREE.PointsMaterial({color: 0xaaaaaa, size: 0.3, transparent: true, opacity: 0.8});
         const bgStars = new THREE.Points(bgGeo, bgMat);
         stars.add(bgStars);
 
@@ -259,7 +259,7 @@ if ('serviceWorker' in navigator) {
             fgPos[i] = (Math.random() - 0.5) * 3000;
         }
         fgGeo.setAttribute('position', new THREE.BufferAttribute(fgPos, 3));
-        const fgMat = new THREE.PointsMaterial({color: 0xffffff, size: 1.2, transparent: true, opacity: 0.9});
+        const fgMat = new THREE.PointsMaterial({color: 0xffffff, size: 0.6, transparent: true, opacity: 0.9});
         const fgStars = new THREE.Points(fgGeo, fgMat);
         stars.add(fgStars);
 
@@ -280,9 +280,9 @@ if ('serviceWorker' in navigator) {
         dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
         const dustMat = new THREE.PointsMaterial({
             color: 0xffffff, 
-            size: 0.8, 
+            size: 0.1, 
             transparent: true, 
-            opacity: 0.6
+            opacity: 0.8
         });
         
         dust = new THREE.Points(dustGeo, dustMat);
