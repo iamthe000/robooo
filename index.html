@@ -105,8 +105,8 @@ if ('serviceWorker' in navigator) {
 
     <div id="crosshair"></div>
     <div id="battle-ui">
-        <div id="hp-display" class="btn" style="top: 60px; left: 20px; width: 100px; text-align: center;">HP: 100</div>
-        <div id="ammo-display" class="btn" style="top: 110px; left: 20px; width: 100px; text-align: center;">Ammo</div>
+        <div id="hp-display" class="btn" style="top: 60px; left: 150px; width: 100px; text-align: center;">HP: 100</div>
+        <div id="ammo-display" class="btn" style="top: 110px; left: 150px; width: 100px; text-align: center;">Ammo</div>
         <div id="stick-area"><div id="stick-knob"></div></div>
         <div id="normal-btn" class="btn">NORMAL</div>
         <div id="triple-btn" class="btn">TRIPLE</div>
@@ -1118,11 +1118,11 @@ if ('serviceWorker' in navigator) {
         if (isBattleMode) {
             renderer.clearDepth(); // Clear depth so HUD renders on top
             
-            const hudSize = 150;
-            const padding = 10;
+            const hudSize = 120;
+            const padding = 20;
             const topBarHeight = 60; // 50px + padding
             
-            const x = window.innerWidth - hudSize - padding;
+            const x = padding;
             const y = window.innerHeight - hudSize - topBarHeight;
             
             renderer.setScissorTest(true);
