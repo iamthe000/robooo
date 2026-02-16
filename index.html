@@ -178,6 +178,10 @@ if ('serviceWorker' in navigator) {
         missile: false,
         all: false
     };
+
+    // HUD Variables
+    let sceneHUD, cameraHUD;
+    let monitorGroup, monitorCubes = [];
     
     init();
     animate();
@@ -189,6 +193,7 @@ if ('serviceWorker' in navigator) {
         camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
         
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.autoClear = false; // Allow manual clearing for HUD overlay
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         document.getElementById('canvas-container').appendChild(renderer.domElement);
@@ -234,6 +239,120 @@ if ('serviceWorker' in navigator) {
         setupJoystick();
         setupButtons();
         updateCameraBuildMode();
+        initHUD();
+    }
+
+    function initHUD() {
+        sceneHUD = new THREE.Scene();
+        
+        // Orthographic Camera for Schematic View
+        // View size 20x20 units, centered
+        const aspect = 1; // Square HUD
+        const frustumSize = 20;
+        cameraHUD = new THREE.OrthographicCamera(
+            frustumSize * aspect / -2, 
+            frustumSize * aspect / 2, 
+            frustumSize / 2, 
+            frustumSize / -2, 
+            1, 
+            1000
+        );
+        cameraHUD.position.set(20, 20, 20); // Isometric-ish view
+        cameraHUD.lookAt(0, 0, 0);
+
+        // Lights for HUD
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+        sceneHUD.add(ambientLight);
+        
+        monitorGroup = new THREE.Group();
+        sceneHUD.add(monitorGroup);
+    }
+
+    function createMonitorShip() {
+        // Clear previous monitor
+        while(monitorGroup.children.length > 0){ 
+            monitorGroup.remove(monitorGroup.children[0]); 
+        }
+        monitorCubes = [];
+
+        // Create simplified clone of the ship
+        // We use BasicMaterial for clear visibility of damage states
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        
+        cubes.forEach(c => {
+            const material = new THREE.MeshBasicMaterial({ 
+                color: 0x00ffff, // Default healthy color (Cyan)
+                wireframe: false,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            const mCube = new THREE.Mesh(geometry, material);
+            mCube.position.copy(c.position);
+            mCube.quaternion.copy(c.quaternion); // Match rotation for turrets/engines if we add shape details later
+            
+            // Store reference to the real cube
+            mCube.userData = { 
+                origCube: c,
+                lastState: 'healthy' 
+            };
+            
+            // Add edges for definition
+            const edges = new THREE.EdgesGeometry(geometry);
+            const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 }));
+            mCube.add(line);
+
+            monitorGroup.add(mCube);
+            monitorCubes.push(mCube);
+        });
+
+        // Reset rotation
+        monitorGroup.rotation.set(0, 0, 0);
+    }
+
+    function updateMonitor() {
+        if (!monitorGroup) return;
+        
+        // Auto rotate
+        monitorGroup.rotation.y += 0.01;
+
+        monitorCubes.forEach(mCube => {
+            const orig = mCube.userData.origCube;
+            if (!orig) return;
+
+            const hp = orig.userData.hp;
+            const maxHp = orig.userData.maxHp;
+            const isDead = orig.userData.isDead;
+
+            // State management for efficiency
+            let state = 'healthy';
+            if (isDead) state = 'dead';
+            else if (hp < maxHp) state = 'damaged';
+
+            if (state !== mCube.userData.lastState || state === 'damaged') {
+                mCube.userData.lastState = state;
+                
+                if (isDead) {
+                    mCube.material.color.setHex(0x555555); // Dark Grey for lost parts
+                    mCube.material.opacity = 0.2;
+                    mCube.material.wireframe = true;
+                } else {
+                    mCube.material.wireframe = false;
+                    mCube.material.opacity = 0.8;
+                    
+                    if (state === 'healthy') {
+                        mCube.material.color.setHex(0x00ffff);
+                    } else {
+                        // Color lerp logic
+                        // Green(00ff00) -> Yellow(ffff00) -> Red(ff0000)
+                        const ratio = hp / maxHp;
+                        const r = Math.min(1, 2 * (1 - ratio));
+                        const g = Math.min(1, 2 * ratio);
+                        mCube.material.color.setRGB(r, g, 0);
+                    }
+                }
+            }
+        });
     }
 
     function createStars() {
@@ -377,6 +496,8 @@ if ('serviceWorker' in navigator) {
             spawnEnemy(0, 0, -40);
             spawnEnemy(15, 5, -50);
             spawnEnemy(-15, -5, -50);
+            
+            createMonitorShip();
         } else {
             modeBtn.innerText = "BATTLE START";
             modeBtn.style.borderColor = "#00ccff";
@@ -684,6 +805,7 @@ if ('serviceWorker' in navigator) {
         if (isBattleMode) {
             updateGamepad();
             updateWeapons();
+            updateMonitor();
 
             const input = getInputState();
 
@@ -984,7 +1106,33 @@ if ('serviceWorker' in navigator) {
                 }
             });
         }
+        
+        // Render Pipeline
+        renderer.clear();
+        
+        // 1. Main Scene
+        renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
         renderer.render(scene, camera);
+
+        // 2. HUD (Battle Mode only)
+        if (isBattleMode) {
+            renderer.clearDepth(); // Clear depth so HUD renders on top
+            
+            const hudSize = 150;
+            const padding = 10;
+            const topBarHeight = 60; // 50px + padding
+            
+            const x = window.innerWidth - hudSize - padding;
+            const y = window.innerHeight - hudSize - topBarHeight;
+            
+            renderer.setScissorTest(true);
+            renderer.setScissor(x, y, hudSize, hudSize);
+            renderer.setViewport(x, y, hudSize, hudSize);
+            
+            renderer.render(sceneHUD, cameraHUD);
+            
+            renderer.setScissorTest(false);
+        }
     }
 
     function setupJoystick() {
