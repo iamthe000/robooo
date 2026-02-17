@@ -51,6 +51,9 @@
         #missile-btn { position: absolute; bottom: 230px; right: 50px; width: 60px; height: 60px; border-radius: 50%; background: rgba(153, 51, 255, 0.2); border: 2px solid #9933ff; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; pointer-events: auto; color: #9933ff; box-shadow: 0 0 10px #9933ff; }
         
         #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; transform: translate(-50%, -50%); pointer-events: none; border: 1px solid rgba(255,255,255,0.5); border-radius: 50%; opacity: 0; }
+        
+        #status-bar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; pointer-events: none; z-index: 100; }
+        #status-bar .btn { position: relative; pointer-events: auto; min-width: 80px; text-align: center; white-space: nowrap; }
 
         
         #file-input { display: none; }
@@ -105,8 +108,10 @@ if ('serviceWorker' in navigator) {
 
     <div id="crosshair"></div>
     <div id="battle-ui">
-        <div id="hp-display" class="btn" style="top: 60px; left: 150px; width: 100px; text-align: center;">HP: 100</div>
-        <div id="ammo-display" class="btn" style="top: 110px; left: 150px; width: 100px; text-align: center;">Ammo</div>
+        <div id="status-bar">
+            <div id="hp-display" class="btn">HP: 100</div>
+            <div id="ammo-display" class="btn">Ammo</div>
+        </div>
         <div id="stick-area"><div id="stick-knob"></div></div>
         <div id="normal-btn" class="btn">NORMAL</div>
         <div id="triple-btn" class="btn">TRIPLE</div>
@@ -1464,9 +1469,9 @@ if ('serviceWorker' in navigator) {
             let tText = tState.reloadTimer > 0 ? "RELOAD" : tState.ammo;
             let mText = mState.reloadTimer > 0 ? "RELOAD" : mState.ammo;
 
-            ammoDiv.innerHTML = `<span style="color:${nState.reloadTimer>0?'red':'cyan'}">NRM: ${nText}</span><br>` +
-                                `<span style="color:${tState.reloadTimer>0?'red':'orange'}">TRP: ${tText}</span><br>` + 
-                                `<span style="color:${mState.reloadTimer>0?'red':'#9933ff'}">MSL: ${mText}</span>`;
+            ammoDiv.innerHTML = `<span style="color:${nState.reloadTimer>0?'red':'cyan'}">NRM: ${nText}</span>` +
+                                `<span style="margin-left: 10px; color:${tState.reloadTimer>0?'red':'orange'}">TRP: ${tText}</span>` + 
+                                `<span style="margin-left: 10px; color:${mState.reloadTimer>0?'red':'#9933ff'}">MSL: ${mText}</span>`;
         }
     }
 
