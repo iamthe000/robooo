@@ -1043,16 +1043,34 @@ if ('serviceWorker' in navigator) {
                         
                         if (b.userData.target) {
                             const targetPos = b.userData.target.position.clone();
+                            const dist = targetPos.distanceTo(b.position);
                             const desiredDir = targetPos.sub(b.position).normalize();
                             const currentDir = b.userData.vel.clone().normalize();
                             
+                            // Calculate angle to target
+                            const dot = currentDir.dot(desiredDir); // 1.0 = forward, 0 = side, -1 = behind
+
+                            // Dynamic turn rate
+                            let turnRate = b.userData.turnRate || 0.12;
+                            let maxSpeed = b.userData.maxSpeed || 2.0;
+                            
+                            // If we are close and the angle is wide, turn harder and slow down
+                            if (dist < 15.0 && dot < 0.8) {
+                                turnRate = 0.3; // Sharp turn
+                                maxSpeed = 1.0; // Reduce speed limit
+                            }
+
                             // Steer
-                            const steer = desiredDir.sub(currentDir).multiplyScalar(b.userData.turnRate || 0.1);
+                            const steer = desiredDir.sub(currentDir).multiplyScalar(turnRate);
                             const newDir = currentDir.add(steer).normalize();
                             
-                            // Accelerate
+                            // Accelerate / Decelerate
                             let speed = b.userData.vel.length();
-                            if (speed < (b.userData.maxSpeed || 1.5)) speed *= (b.userData.accel || 1.05);
+                            if (speed < maxSpeed) {
+                                speed *= (b.userData.accel || 1.05);
+                            } else {
+                                speed *= 0.95; // Brake if over speed
+                            }
                             if (speed < 0.5) speed = 0.5;
 
                             b.userData.vel.copy(newDir.multiplyScalar(speed));
