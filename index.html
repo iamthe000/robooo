@@ -677,12 +677,29 @@ if ('serviceWorker' in navigator) {
             group.setRotationFromQuaternion(quaternion);
             group.position.add(direction.clone().multiplyScalar(0.2)); 
             
-            // Large Barrel
-            const barrelGeo = new THREE.CylinderGeometry(0.25, 0.25, 1.2, 16);
-            const barrelMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8, roughness: 0.2 });
-            const barrel = new THREE.Mesh(barrelGeo, barrelMat);
-            barrel.position.y = 0.2;
-            group.add(barrel);
+            // Turret Housing
+            const housingGeo = new THREE.BoxGeometry(0.8, 0.5, 0.8);
+            const housingMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.7, roughness: 0.4 });
+            const housing = new THREE.Mesh(housingGeo, housingMat);
+            housing.position.y = 0.25;
+            group.add(housing);
+
+            // Triple Barrels
+            const barrelGeo = new THREE.CylinderGeometry(0.12, 0.12, 1.4, 16);
+            const barrelMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9, roughness: 0.2 });
+            
+            const offsets = [-0.25, 0, 0.25];
+            offsets.forEach(offX => {
+                const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+                barrel.position.set(offX, 0.7, 0); // Extend forward
+                group.add(barrel);
+
+                // Barrel Mount/Sleeve
+                const sleeveGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.4, 16);
+                const sleeve = new THREE.Mesh(sleeveGeo, housingMat);
+                sleeve.position.set(offX, 0.4, 0);
+                group.add(sleeve);
+            });
             
             cube.add(group);
         }
@@ -1071,11 +1088,37 @@ if ('serviceWorker' in navigator) {
 
                                 let exScale = 0.8;
                                 if (b.userData.isMissile) exScale = 3.0;
-                                if (b.userData.isCannon) exScale = 2.0;
+                                if (b.userData.isCannon) exScale = 4.0;
 
                                 createExplosion(worldPos, c.material.color.getHex(), exScale); // Block destroyed
-                                enemy.group.remove(c);
-                                enemy.cubes.splice(j, 1);
+
+                                // AOE Damage for Cannon
+                                if (b.userData.isCannon) {
+                                    const impactPos = worldPos.clone();
+                                    const radius = 2.5; 
+                                    
+                                    // Iterate backwards to allow removal
+                                    for (let m = enemy.cubes.length - 1; m >= 0; m--) {
+                                        const targetCube = enemy.cubes[m];
+                                        if (targetCube === c) {
+                                             enemy.group.remove(c);
+                                             enemy.cubes.splice(m, 1);
+                                             continue;
+                                        }
+                                        
+                                        const tPos = targetCube.position.clone().applyMatrix4(enemy.group.matrixWorld);
+                                        if (tPos.distanceTo(impactPos) <= radius) {
+                                            // Destroy surrounding block
+                                            createParticle(tPos, new THREE.Vector3(0,0,0), targetCube.material.color.getHex(), 0.5, 20, 'normal');
+                                            enemy.group.remove(targetCube);
+                                            enemy.cubes.splice(m, 1);
+                                        }
+                                    }
+                                } else {
+                                    enemy.group.remove(c);
+                                    enemy.cubes.splice(j, 1);
+                                }
+
                                 hitEnemy = true;
                                 break;
                             }
@@ -1381,14 +1424,24 @@ if ('serviceWorker' in navigator) {
                     scene.add(shell);
                     bullets.push(shell);
 
-                    // Recoil logic: Strong push back
+                    // Recoil logic: Strong push back (Increased)
                     if (isPlayer) {
-                        const recoilForce = fireDir.clone().negate().multiplyScalar(0.08); 
+                        const recoilForce = fireDir.clone().negate().multiplyScalar(0.4); 
                         velocity.add(recoilForce);
-                        shakeIntensity += 0.3;
+                        shakeIntensity += 0.5;
                     }
 
-                    createParticle(spawnPos, fireDir.clone().multiplyScalar(0.5), 0x555555, 0.6, 30, 'smoke');
+                    // Intense Smoke
+                    for(let i=0; i<8; i++) {
+                         const sDir = fireDir.clone().multiplyScalar(0.5 + Math.random()*0.5);
+                         createParticle(spawnPos, sDir, 0x333333, 0.6 + Math.random()*0.4, 40 + Math.random()*20, 'smoke');
+                    }
+                    
+                    // Intense Sparks
+                    for(let i=0; i<12; i++) {
+                         const sDir = fireDir.clone().add(new THREE.Vector3((Math.random()-0.5)*0.8, (Math.random()-0.5)*0.8, (Math.random()-0.5)*0.8)).normalize().multiplyScalar(1.0 + Math.random()*1.0);
+                         createParticle(spawnPos, sDir, 0xffaa00, 0.15, 10 + Math.random()*10, 'normal');
+                    }
                     return;
 
                 } else if (isMissile) {
