@@ -1032,31 +1032,36 @@ if ('serviceWorker' in navigator) {
 
                 if (b.userData.isMissile) {
                     // Homing Logic
-                    if (!b.userData.target || (b.userData.target.parent === null && b.userData.target !== robotGroup)) {
-                        b.userData.target = findNearestEnemy(b.position, b.userData.isPlayer);
+                    if (b.userData.homingDelay > 0) {
+                        b.userData.homingDelay--;
+                        b.userData.vel.multiplyScalar(0.95); // Drag phase
+                        b.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), b.userData.vel.clone().normalize());
+                    } else {
+                        if (!b.userData.target || (b.userData.target.parent === null && b.userData.target !== robotGroup)) {
+                            b.userData.target = findNearestEnemy(b.position, b.userData.isPlayer);
+                        }
+                        
+                        if (b.userData.target) {
+                            const targetPos = b.userData.target.position.clone();
+                            const desiredDir = targetPos.sub(b.position).normalize();
+                            const currentDir = b.userData.vel.clone().normalize();
+                            
+                            // Steer
+                            const steer = desiredDir.sub(currentDir).multiplyScalar(b.userData.turnRate || 0.1);
+                            const newDir = currentDir.add(steer).normalize();
+                            
+                            // Accelerate
+                            let speed = b.userData.vel.length();
+                            if (speed < (b.userData.maxSpeed || 1.5)) speed *= (b.userData.accel || 1.05);
+                            if (speed < 0.5) speed = 0.5;
+
+                            b.userData.vel.copy(newDir.multiplyScalar(speed));
+                            b.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), newDir);
+                        }
                     }
                     
-                    if (b.userData.target) {
-                        const targetPos = b.userData.target.position.clone();
-                        const desiredDir = targetPos.sub(b.position).normalize();
-                        const currentDir = b.userData.vel.clone().normalize();
-                        
-                        // Steer
-                        const steer = desiredDir.sub(currentDir).multiplyScalar(b.userData.turnRate || 0.1);
-                        const newDir = currentDir.add(steer).normalize();
-                        
-                        // Accelerate
-                        let speed = b.userData.vel.length();
-                        if (speed < (b.userData.maxSpeed || 1.5)) speed *= (b.userData.accel || 1.05);
-                        
-                        b.userData.vel.copy(newDir.multiplyScalar(speed));
-                        b.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), newDir);
-                    }
-                    
-                    // Smoke Trail
-                    if(Math.random() > 0.3) {
-                        createParticle(b.position, new THREE.Vector3(0,0,0), 0xaaaaaa, 0.4, 20, 'smoke');
-                    }
+                    // Smoke Trail - cleaner
+                    createParticle(b.position, new THREE.Vector3(0,0,0), 0xaaaaaa, 0.2, 40, 'smoke');
                 }
 
                 b.position.add(b.userData.vel);
@@ -1453,16 +1458,21 @@ if ('serviceWorker' in navigator) {
                     const missile = new THREE.Mesh(missileGeo, new THREE.MeshBasicMaterial({ color: color }));
                     missile.position.copy(spawnPos);
                     
+                    // Spread logic
+                    const spread = new THREE.Vector3((Math.random()-0.5), (Math.random()-0.5), (Math.random()-0.5)).multiplyScalar(0.8);
+                    const launchDir = fireDir.clone().add(spread).normalize();
+
                     // Look at fire direction
-                    const targetQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), fireDir);
+                    const targetQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), launchDir);
                     missile.quaternion.copy(targetQ);
 
                     missile.userData = { 
-                        vel: fireDir.clone().multiplyScalar(0.3), // Start slow
-                        maxSpeed: 1.2,
-                        turnRate: 0.6,
+                        vel: launchDir.multiplyScalar(0.8), // Start with ejection speed
+                        maxSpeed: 2.0,
+                        turnRate: 0.12, // Smoother turns
                         accel: 1.05,
                         life: 300, 
+                        homingDelay: 15, // Fly straight first
                         isPlayer: isPlayer, 
                         isMissile: true,
                         target: findNearestEnemy(spawnPos, isPlayer)
