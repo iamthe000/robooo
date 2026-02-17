@@ -1054,10 +1054,24 @@ if ('serviceWorker' in navigator) {
                             let turnRate = b.userData.turnRate || 0.12;
                             let maxSpeed = b.userData.maxSpeed || 2.0;
                             
-                            // If we are close and the angle is wide, turn harder and slow down
-                            if (dist < 15.0 && dot < 0.8) {
-                                turnRate = 0.3; // Sharp turn
-                                maxSpeed = 1.0; // Reduce speed limit
+                            // Aggressive Homing (Close Range)
+                            // If we are close (< 30.0), scale turn rate up and speed down based on proximity
+                            if (dist < 30.0) {
+                                const proximityFactor = (30.0 - dist) / 30.0; // 0.0 (far) -> 1.0 (close)
+                                
+                                // Increase turn rate significantly as we get closer
+                                // Base 0.12 -> Max ~0.5
+                                turnRate += proximityFactor * 0.4;
+                                
+                                // Decrease max speed significantly as we get closer
+                                // Base 2.0 -> Min ~0.8
+                                maxSpeed = 2.0 - (proximityFactor * 1.2);
+                                
+                                // Extra brake if angle is wide (orbiting prevention)
+                                if (dot < 0.5) {
+                                    turnRate += 0.2; 
+                                    maxSpeed *= 0.7;
+                                }
                             }
 
                             // Steer
@@ -1069,9 +1083,10 @@ if ('serviceWorker' in navigator) {
                             if (speed < maxSpeed) {
                                 speed *= (b.userData.accel || 1.05);
                             } else {
-                                speed *= 0.95; // Brake if over speed
+                                // Strong braking if over speed in close quarters
+                                speed *= (dist < 20.0) ? 0.85 : 0.95; 
                             }
-                            if (speed < 0.5) speed = 0.5;
+                            if (speed < 0.4) speed = 0.4; // Minimum speed to prevent stop
 
                             b.userData.vel.copy(newDir.multiplyScalar(speed));
                             b.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), newDir);
