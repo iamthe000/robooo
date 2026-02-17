@@ -36,6 +36,7 @@
         #p-turret { background: #ffd700; }
         #p-triple { background: #ffaa00; }
         #p-missile { background: #9933ff; }
+        #p-cannon { background: #444; border: 1px solid #aaaaaa; color: #fff; }
         #p-delete { background: #333; border-color: #ff0000; color: #ff0000; font-weight: bold; } 
         
         #build-msg { text-align: center; font-size: 12px; opacity: 0.8; text-shadow: 1px 1px 2px black; margin-bottom: 5px; }
@@ -50,6 +51,10 @@
         #triple-btn { position: absolute; bottom: 140px; right: 130px; width: 60px; height: 60px; border-radius: 50%; background: rgba(255, 170, 0, 0.2); border: 2px solid #ffaa00; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; pointer-events: auto; color: #ffaa00; box-shadow: 0 0 10px #ffaa00; }
         #missile-btn { position: absolute; bottom: 230px; right: 50px; width: 60px; height: 60px; border-radius: 50%; background: rgba(153, 51, 255, 0.2); border: 2px solid #9933ff; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; pointer-events: auto; color: #9933ff; box-shadow: 0 0 10px #9933ff; }
         
+        #cannon-btn { position: absolute; bottom: 230px; right: 130px; width: 60px; height: 60px; border-radius: 50%; background: rgba(50, 50, 50, 0.4); border: 2px solid #aaaaaa; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; pointer-events: auto; color: #aaaaaa; box-shadow: 0 0 10px #aaaaaa; }
+        #cannon-gauge { display: flex; gap: 2px; margin-top: 4px; width: 40px; height: 6px; }
+        #cannon-gauge div { flex: 1; background: #00ff00; height: 100%; border-radius: 2px; transition: width 0.1s, background 0.1s; }
+
         #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; transform: translate(-50%, -50%); pointer-events: none; border: 1px solid rgba(255,255,255,0.5); border-radius: 50%; opacity: 0; }
         
         #status-bar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; pointer-events: none; z-index: 100; }
@@ -102,6 +107,7 @@ if ('serviceWorker' in navigator) {
             <div id="p-turret" class="palette-item" onclick="selectBlock('turret')">TURRET</div>
             <div id="p-triple" class="palette-item" onclick="selectBlock('triple')">TRIPLE</div>
             <div id="p-missile" class="palette-item" onclick="selectBlock('missile')">MISSILE</div>
+            <div id="p-cannon" class="palette-item" onclick="selectBlock('cannon')">CANNON</div>
             <div id="p-delete" class="palette-item" onclick="selectBlock('delete')">DEL</div>
         </div>
     </div>
@@ -116,6 +122,13 @@ if ('serviceWorker' in navigator) {
         <div id="normal-btn" class="btn">NORMAL</div>
         <div id="triple-btn" class="btn">TRIPLE</div>
         <div id="missile-btn" class="btn">MISSILE</div>
+        <div id="cannon-btn" class="btn">SOLID
+            <div id="cannon-gauge">
+                <div id="c-gauge-1"></div>
+                <div id="c-gauge-2"></div>
+                <div id="c-gauge-3"></div>
+            </div>
+        </div>
         <div id="fire-btn" class="btn">ALL FIRE</div>
         <div id="boost-btn" class="btn">BOOST</div>
     </div>
@@ -161,13 +174,15 @@ if ('serviceWorker' in navigator) {
     const WEAPON_STATS = {
         normal: { fireDelay: 15, maxAmmo: 50, reloadTime: 120 }, // Slower fire, larger mag
         triple: { fireDelay: 5, maxAmmo: 25, reloadTime: 90 },    // Fast fire, smaller mag (frequent reload)
-        missile: { fireDelay: 30, maxAmmo: 1, reloadTime: 1 } // Reload is per-block, global reset needed
+        missile: { fireDelay: 30, maxAmmo: 1, reloadTime: 1 }, // Reload is per-block
+        cannon: { fireDelay: 20, maxAmmo: 3, reloadTime: 300 } // Long reload, limited ammo
     };
 
     let weaponState = {
         normal: { cooldown: 0, ammo: 50, reloadTimer: 0 },
         triple: { cooldown: 0, ammo: 25, reloadTimer: 0 },
-        missile: { cooldown: 0, ammo: 1, reloadTimer: 0 }
+        missile: { cooldown: 0, ammo: 1, reloadTimer: 0 },
+        cannon: { cooldown: 0, ammo: 3, reloads: [0, 0, 0] }
     };
     
     let inputState = {
@@ -175,6 +190,14 @@ if ('serviceWorker' in navigator) {
         fireTriple: false,
         fireMissile: false,
         fireAll: false
+    };
+    
+    let cannonInput = {
+        pressTime: 0,
+        isHolding: false,
+        volleyActive: false,
+        volleyQueue: 0,
+        volleyTimer: 0
     };
 
     let gamepadFireState = {
@@ -560,6 +583,7 @@ if ('serviceWorker' in navigator) {
         if (type === 'engine') { color = 0xff3300; emissive = 0x330000; }
         if (type === 'turret') { color = 0xffd700; emissive = 0x332200; }
         if (type === 'triple') { color = 0xffaa00; emissive = 0x332200; }
+        if (type === 'cannon') { color = 0x444444; }
         
         if (colorOverride !== null && colorOverride !== undefined) {
             color = colorOverride;
@@ -639,6 +663,27 @@ if ('serviceWorker' in navigator) {
                 part.position.set(pos.x, pos.y, pos.z);
                 group.add(part);
             });
+            cube.add(group);
+        }
+
+        if (type === 'cannon') {
+            cube.userData.isTurret = true;
+            cube.userData.subType = 'cannon';
+            cube.userData.fireDir = direction;
+
+            const group = new THREE.Group();
+            const quaternion = new THREE.Quaternion();
+            quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+            group.setRotationFromQuaternion(quaternion);
+            group.position.add(direction.clone().multiplyScalar(0.2)); 
+            
+            // Large Barrel
+            const barrelGeo = new THREE.CylinderGeometry(0.25, 0.25, 1.2, 16);
+            const barrelMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8, roughness: 0.2 });
+            const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+            barrel.position.y = 0.2;
+            group.add(barrel);
+            
             cube.add(group);
         }
 
@@ -811,6 +856,24 @@ if ('serviceWorker' in navigator) {
             updateGamepad();
             updateWeapons();
             updateMonitor();
+
+            // Cannon Input Logic
+            if (cannonInput.isHolding && !cannonInput.volleyActive) {
+                 if (Date.now() - cannonInput.pressTime > 300) {
+                     attemptFireCannon('volley');
+                     cannonInput.volleyActive = true; 
+                 }
+            }
+
+            // Process Volley Queue
+            if (cannonInput.volleyQueue > 0) {
+                cannonInput.volleyTimer++;
+                if (cannonInput.volleyTimer > 8) { 
+                    fireBullet('cannon'); 
+                    cannonInput.volleyQueue--;
+                    cannonInput.volleyTimer = 0;
+                }
+            }
 
             const input = getInputState();
 
@@ -1006,7 +1069,11 @@ if ('serviceWorker' in navigator) {
                                     break;
                                 }
 
-                                createExplosion(worldPos, c.material.color.getHex(), 0.8); // Block destroyed
+                                let exScale = 0.8;
+                                if (b.userData.isMissile) exScale = 3.0;
+                                if (b.userData.isCannon) exScale = 2.0;
+
+                                createExplosion(worldPos, c.material.color.getHex(), exScale); // Block destroyed
                                 enemy.group.remove(c);
                                 enemy.cubes.splice(j, 1);
                                 hitEnemy = true;
@@ -1177,6 +1244,32 @@ if ('serviceWorker' in navigator) {
         setPress(normalBtn, v => inputState.fireNormal = v);
         setPress(tripleBtn, v => inputState.fireTriple = v);
         setPress(missileBtn, v => inputState.fireMissile = v);
+
+        const cannonBtn = document.getElementById('cannon-btn');
+        if (cannonBtn) {
+            const startPress = (e) => {
+                e.preventDefault();
+                cannonInput.isHolding = true;
+                cannonInput.pressTime = Date.now();
+                cannonInput.volleyActive = false;
+            };
+            const endPress = (e) => {
+                e.preventDefault();
+                if (cannonInput.isHolding) {
+                    cannonInput.isHolding = false;
+                    const duration = Date.now() - cannonInput.pressTime;
+                    if (duration < 300 && !cannonInput.volleyActive) {
+                        attemptFireCannon('single');
+                    }
+                }
+            };
+            
+            cannonBtn.addEventListener('touchstart', startPress, {passive:false});
+            cannonBtn.addEventListener('mousedown', startPress);
+            cannonBtn.addEventListener('touchend', endPress);
+            cannonBtn.addEventListener('mouseup', endPress);
+            cannonBtn.addEventListener('mouseleave', endPress);
+        }
     }
 
     function updateGamepad() {
@@ -1262,14 +1355,43 @@ if ('serviceWorker' in navigator) {
                 // 発射対象のフィルタリング
                 const isTriple = (c.userData.subType === 'triple');
                 const isMissile = (c.userData.subType === 'missile');
+                const isCannon = (c.userData.subType === 'cannon');
 
-                if (targetType === 'normal' && (isTriple || isMissile)) return;
+                if (targetType === 'normal' && (isTriple || isMissile || isCannon)) return;
                 if (targetType === 'triple' && !isTriple) return;
                 if (targetType === 'missile' && !isMissile) return;
+                if (targetType === 'cannon' && !isCannon) return;
 
                 const fireDir = c.userData.fireDir.clone().applyQuaternion(firingGroup.quaternion).normalize();
                 
-                if (isMissile) {
+                if (isCannon) {
+                    const spawnPos = c.position.clone().applyMatrix4(firingGroup.matrixWorld).add(fireDir.clone().multiplyScalar(1.0));
+                    
+                    const shellGeo = new THREE.SphereGeometry(0.35, 8, 8);
+                    const shellMat = new THREE.MeshBasicMaterial({ color: 0xffddaa }); // Hot metal
+                    const shell = new THREE.Mesh(shellGeo, shellMat);
+                    shell.position.copy(spawnPos);
+                    
+                    shell.userData = { 
+                        vel: fireDir.clone().multiplyScalar(3.0), // Fast
+                        life: 150, 
+                        isPlayer: isPlayer, 
+                        isCannon: true 
+                    };
+                    scene.add(shell);
+                    bullets.push(shell);
+
+                    // Recoil logic: Strong push back
+                    if (isPlayer) {
+                        const recoilForce = fireDir.clone().negate().multiplyScalar(0.08); 
+                        velocity.add(recoilForce);
+                        shakeIntensity += 0.3;
+                    }
+
+                    createParticle(spawnPos, fireDir.clone().multiplyScalar(0.5), 0x555555, 0.6, 30, 'smoke');
+                    return;
+
+                } else if (isMissile) {
                     if (c.userData.reloadTimer > 0) return;
                     c.userData.reloadTimer = c.userData.missileReloadTime; // Set reload timer
 
@@ -1457,6 +1579,33 @@ if ('serviceWorker' in navigator) {
                 }
             }
         });
+
+        // Cannon specialized update
+        const cState = weaponState.cannon;
+        const cStats = WEAPON_STATS.cannon;
+        if (cState.cooldown > 0) cState.cooldown--;
+        
+        cState.reloads.forEach((t, i) => {
+            if (t > 0) cState.reloads[i]--;
+        });
+        // Count ready charges
+        cState.ammo = cState.reloads.filter(t => t <= 0).length;
+
+        // Update Cannon UI
+        for(let i=0; i<3; i++) {
+             const bar = document.getElementById('c-gauge-' + (i+1));
+             if (bar) {
+                 const t = cState.reloads[i];
+                 if (t <= 0) {
+                     bar.style.width = '100%';
+                     bar.style.background = '#00ff00';
+                 } else {
+                     const pct = 1.0 - (t / cStats.reloadTime);
+                     bar.style.width = (pct * 100) + '%';
+                     bar.style.background = '#ff4400';
+                 }
+             }
+        }
         
         // Update UI
         const ammoDiv = document.getElementById('ammo-display');
@@ -1493,6 +1642,35 @@ if ('serviceWorker' in navigator) {
         
         if (state.ammo <= 0) {
             state.reloadTimer = stats.reloadTime;
+        }
+    }
+
+    function attemptFireCannon(mode) {
+        const state = weaponState.cannon;
+        const stats = WEAPON_STATS.cannon;
+        
+        // Find ready charges
+        let readyIndices = [];
+        state.reloads.forEach((t, i) => { if(t <= 0) readyIndices.push(i); });
+        
+        if (readyIndices.length === 0) return; // No ammo
+        
+        if (mode === 'single') {
+            // Fire first available
+            const idx = readyIndices[0];
+            fireBullet('cannon');
+            state.reloads[idx] = stats.reloadTime;
+            state.ammo = readyIndices.length - 1; 
+        } else if (mode === 'volley') {
+            // Fire all available
+            cannonInput.volleyQueue = readyIndices.length;
+            cannonInput.volleyTimer = 8; // Start immediately (will trigger > 8 check next frame? No set to 8 to trigger immediately)
+            
+            // Consume all
+            readyIndices.forEach(idx => {
+                state.reloads[idx] = stats.reloadTime;
+            });
+            state.ammo = 0;
         }
     }
 </script>
