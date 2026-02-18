@@ -145,7 +145,7 @@ if ('serviceWorker' in navigator) {
     let isBattleMode = false;
     let bullets = [];
     let particles = [];
-    let stars, dust, gridHelper;
+    let stars, dust, gridHelper, buildGuides;
     let ambLight, dirLight;
     let enemies = [];
     let spawnTimer = 0;
@@ -241,6 +241,8 @@ if ('serviceWorker' in navigator) {
         gridHelper = new THREE.GridHelper(30, 30, 0x555555, 0x333333);
         gridHelper.position.y = -2; 
         scene.add(gridHelper);
+
+        createBuildGuides();
 
         robotGroup = new THREE.Group();
         scene.add(robotGroup);
@@ -436,6 +438,76 @@ if ('serviceWorker' in navigator) {
         scene.add(dust);
     }
 
+    function createBuildGuides() {
+        buildGuides = new THREE.Group();
+        
+        // Front Guide (Z-)
+        const frontCanvas = document.createElement('canvas');
+        frontCanvas.width = 256;
+        frontCanvas.height = 128;
+        const fCtx = frontCanvas.getContext('2d');
+        fCtx.clearRect(0,0, 256, 128);
+        
+        fCtx.fillStyle = '#00ccff'; // Cyan
+        fCtx.font = 'bold 40px Arial';
+        fCtx.textAlign = 'center';
+        fCtx.textBaseline = 'middle';
+        fCtx.fillText("FRONT", 128, 100);
+        
+        // Arrow pointing UP (Forward in 3D when rotated)
+        fCtx.beginPath();
+        fCtx.moveTo(128, 20); // Tip
+        fCtx.lineTo(168, 60);
+        fCtx.lineTo(148, 60);
+        fCtx.lineTo(148, 80); 
+        fCtx.lineTo(108, 80);
+        fCtx.lineTo(108, 60);
+        fCtx.lineTo(88, 60);
+        fCtx.closePath();
+        fCtx.fill();
+        
+        const frontTex = new THREE.CanvasTexture(frontCanvas);
+        const frontMat = new THREE.MeshBasicMaterial({ map: frontTex, transparent: true, side: THREE.DoubleSide, opacity: 0.6 });
+        const frontPlane = new THREE.Mesh(new THREE.PlaneGeometry(8, 4), frontMat);
+        frontPlane.rotation.x = -Math.PI / 2;
+        frontPlane.position.set(0, -1.9, -10);
+        buildGuides.add(frontPlane);
+
+        // Back Guide (Z+)
+        const backCanvas = document.createElement('canvas');
+        backCanvas.width = 256;
+        backCanvas.height = 128;
+        const bCtx = backCanvas.getContext('2d');
+        bCtx.clearRect(0,0, 256, 128);
+        
+        bCtx.fillStyle = '#ff4400'; // Orange
+        bCtx.font = 'bold 40px Arial';
+        bCtx.textAlign = 'center';
+        bCtx.textBaseline = 'middle';
+        bCtx.fillText("BACK", 128, 28); 
+        
+        // Arrow pointing DOWN (Backward)
+        bCtx.beginPath();
+        bCtx.moveTo(128, 108); // Tip
+        bCtx.lineTo(168, 68);
+        bCtx.lineTo(148, 68);
+        bCtx.lineTo(148, 48);
+        bCtx.lineTo(108, 48);
+        bCtx.lineTo(108, 68);
+        bCtx.lineTo(88, 68);
+        bCtx.closePath();
+        bCtx.fill();
+
+        const backTex = new THREE.CanvasTexture(backCanvas);
+        const backMat = new THREE.MeshBasicMaterial({ map: backTex, transparent: true, side: THREE.DoubleSide, opacity: 0.6 });
+        const backPlane = new THREE.Mesh(new THREE.PlaneGeometry(8, 4), backMat);
+        backPlane.rotation.x = -Math.PI / 2;
+        backPlane.position.set(0, -1.9, 10);
+        buildGuides.add(backPlane);
+
+        scene.add(buildGuides);
+    }
+
     function saveRobot() {
         if(isBattleMode) return;
         
@@ -515,6 +587,7 @@ if ('serviceWorker' in navigator) {
             stars.visible = true;
             dust.visible = true;
             gridHelper.visible = false;
+            if(buildGuides) buildGuides.visible = false;
             ambLight.intensity = 0.4;
             dirLight.intensity = 1.0;
             velocity.set(0,0,0);
@@ -540,6 +613,7 @@ if ('serviceWorker' in navigator) {
             stars.visible = false;
             dust.visible = false;
             gridHelper.visible = true;
+            if(buildGuides) buildGuides.visible = true;
             ambLight.intensity = 0.8;
             dirLight.intensity = 0.8;
             
