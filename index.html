@@ -135,10 +135,12 @@ if ('serviceWorker' in navigator) {
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
 <script>
     
-    let scene, camera, renderer;
+    let scene, camera, renderer, controls;
+    let ghostMesh;
     let robotGroup; 
     let cubes = []; 
     let raycaster, mouse;
@@ -161,7 +163,6 @@ if ('serviceWorker' in navigator) {
     let isBoosting = false;
     let velocity = new THREE.Vector3();
     let currentAngularVelocity = new THREE.Vector3();
-    let camLat = 0.5, camLon = 0.5;
     let shakeIntensity = 0;
 
     // Gamepad state
@@ -219,12 +220,20 @@ if ('serviceWorker' in navigator) {
         scene.background = new THREE.Color(0x222428); 
 
         camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
-        
+        camera.position.set(10, 10, 10);
+
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         renderer.autoClear = false; // Allow manual clearing for HUD overlay
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.screenSpacePanning = false;
+        controls.minDistance = 5;
+        controls.maxDistance = 100;
 
         ambLight = new THREE.AmbientLight(0xffffff, 0.8);
         scene.add(ambLight);
@@ -241,6 +250,13 @@ if ('serviceWorker' in navigator) {
         gridHelper = new THREE.GridHelper(30, 30, 0x555555, 0x333333);
         gridHelper.position.y = -2; 
         scene.add(gridHelper);
+
+        ghostMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1, 1, 1),
+            new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 })
+        );
+        ghostMesh.visible = false;
+        scene.add(ghostMesh);
 
         createBuildGuides();
 
@@ -266,9 +282,25 @@ if ('serviceWorker' in navigator) {
         document.getElementById('load-btn').addEventListener('click', () => document.getElementById('file-input').click());
         document.getElementById('file-input').addEventListener('change', loadRobot);
         
+        canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+        window.addEventListener('keydown', e => {
+            if(isBattleMode) return;
+            if(e.target.tagName === 'INPUT') return;
+
+            const key = e.key;
+            if(key === '1') selectBlock('normal');
+            if(key === '2') selectBlock('armor');
+            if(key === '3') selectBlock('engine');
+            if(key === '4') selectBlock('turret');
+            if(key === '5') selectBlock('triple');
+            if(key === '6') selectBlock('missile');
+            if(key === '7') selectBlock('cannon');
+            if(key === '8') selectBlock('delete');
+        });
+
         setupJoystick();
         setupButtons();
-        updateCameraBuildMode();
         initHUD();
     }
 
@@ -926,6 +958,7 @@ if ('serviceWorker' in navigator) {
             dust.visible = true;
             gridHelper.visible = false;
             if(buildGuides) buildGuides.visible = false;
+            ghostMesh.visible = false;
             ambLight.intensity = 0.4;
             dirLight.intensity = 1.0;
             velocity.set(0,0,0);
@@ -937,6 +970,7 @@ if ('serviceWorker' in navigator) {
             spawnEnemy(-15, -5, -50);
             
             createMonitorShip();
+            if(controls) controls.enabled = false;
         } else {
             modeBtn.innerText = "BATTLE START";
             modeBtn.style.borderColor = "#00ccff";
@@ -957,7 +991,12 @@ if ('serviceWorker' in navigator) {
             
             robotGroup.position.set(0,0,0);
             robotGroup.rotation.set(0,0,0);
-            updateCameraBuildMode();
+            
+            if(controls) {
+                controls.enabled = true;
+                controls.reset();
+            }
+
             bullets.forEach(b => scene.remove(b));
             bullets = [];
             enemies.forEach(e => scene.remove(e.group));
@@ -1170,6 +1209,8 @@ if ('serviceWorker' in navigator) {
     }
 
     function onPointerMove(e) {
+        if (!isBattleMode) updateGhostCursor(e);
+
         if(isDragging) {
             const dx = e.clientX - startX;
             const dy = e.clientY - startY;
@@ -1179,14 +1220,34 @@ if ('serviceWorker' in navigator) {
                  const sens = 0.005;
                  robotGroup.rotateY(-dx * sens);
                  robotGroup.rotateX(-dy * sens);
-            } else {
-                camLat -= dx * 0.005;
-                camLon += dy * 0.005;
-                camLon = Math.max(-Math.PI/2, Math.min(Math.PI/2, camLon));
-                updateCameraBuildMode();
             }
             startX = e.clientX;
             startY = e.clientY;
+        }
+    }
+
+    function updateGhostCursor(e) {
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+        
+        const intersects = raycaster.intersectObjects(cubes);
+        if (intersects.length > 0) {
+            const intersect = intersects[0];
+            const face = intersect.face;
+            
+            if (currentBlockType === 'delete' || e.shiftKey) {
+                 ghostMesh.position.copy(intersect.object.position);
+                 ghostMesh.material.color.setHex(0xff0000);
+                 ghostMesh.scale.set(1.05, 1.05, 1.05);
+            } else {
+                 ghostMesh.position.copy(intersect.object.position).add(face.normal);
+                 ghostMesh.material.color.setHex(0x00ff00);
+                 ghostMesh.scale.set(1, 1, 1);
+            }
+            ghostMesh.visible = true;
+        } else {
+            ghostMesh.visible = false;
         }
     }
 
@@ -1206,17 +1267,17 @@ if ('serviceWorker' in navigator) {
             const intersect = intersects[0];
             const obj = intersect.object;
 
-            
-            if (currentBlockType === 'delete') {
-                
+            const isDelete = currentBlockType === 'delete' || e.shiftKey || e.button === 2;
+
+            if (isDelete) {
                 if (obj.position.lengthSq() < 0.1) return;
                 
                 robotGroup.remove(obj);
                 cubes = cubes.filter(c => c !== obj);
+                updateGhostCursor(e);
                 return;
             }
 
-            
             const face = intersect.face;
             const newPos = obj.position.clone().add(face.normal);
             
@@ -1224,15 +1285,8 @@ if ('serviceWorker' in navigator) {
             if (currentBlockType === 'normal') override = currentBlockColor;
             
             addCube(newPos.x, newPos.y, newPos.z, currentBlockType, face.normal, override);
+            updateGhostCursor(e);
         }
-    }
-
-    function updateCameraBuildMode() {
-        const radius = 14;
-        camera.position.x = radius * Math.sin(camLat) * Math.cos(camLon);
-        camera.position.z = radius * Math.cos(camLat) * Math.cos(camLon);
-        camera.position.y = radius * Math.sin(camLon);
-        camera.lookAt(0, 0, 0);
     }
 
     function getInputState() {
@@ -1281,6 +1335,9 @@ if ('serviceWorker' in navigator) {
 
     function animate() {
         requestAnimationFrame(animate);
+        
+        if (!isBattleMode && controls) controls.update();
+
         if (isBattleMode) {
             updateGamepad();
             updateWeapons();
