@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Voxel Converter</title>
+    <style>
+        body { font-family: sans-serif; background: #222; color: #fff; padding: 20px; text-align: center; }
+        .container { max-width: 600px; margin: 0 auto; background: #333; padding: 20px; border-radius: 10px; }
+        input[type="file"] { margin: 20px 0; }
+        button { padding: 10px 20px; background: #00ccff; border: none; color: #000; font-weight: bold; cursor: pointer; border-radius: 5px; }
+        button:hover { background: #00aadd; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Robot File Converter</h1>
+        <p>Convert .json to optimized .svrobot format</p>
+        <input type="file" id="file-input" accept=".json">
+        <br>
+        <button onclick="convert()">Convert & Download</button>
+        <p id="status"></p>
+    </div>
+
+    <script>
+        const BLOCK_TYPES = ['normal', 'armor', 'engine', 'turret', 'triple', 'missile', 'cannon', 'core'];
+        const DIR_VECTORS = [
+            {id: 0, x: 0, y: 1, z: 0}, // UP
+            {id: 1, x: 0, y: -1, z: 0}, // DOWN
+            {id: 2, x: 1, y: 0, z: 0}, // RIGHT
+            {id: 3, x: -1, y: 0, z: 0}, // LEFT
+            {id: 4, x: 0, y: 0, z: 1}, // BACK (Z+)
+            {id: 5, x: 0, y: 0, z: -1} // FRONT (Z-)
+        ];
+
+        function getDirId(vec) {
+            let best = 0;
+            let maxDot = -Infinity;
+            // Handle both {x,y,z} and THREE.Vector3
+            const v = {x: vec.x, y: vec.y, z: vec.z};
+            // Normalize roughly
+            const len = Math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+            if (len > 0) { v.x/=len; v.y/=len; v.z/=len; }
+            
+            for(let i=0; i<DIR_VECTORS.length; i++) {
+                const d = DIR_VECTORS[i];
+                const dot = v.x*d.x + v.y*d.y + v.z*d.z;
+                if(dot > maxDot) {
+                    maxDot = dot;
+                    best = i;
+                }
+            }
+            return best;
+        }
+
+        function encodeRobot(cubesData) { 
+            // Header: SVRB (4) + Version (1) = 5 bytes
+            // Block: Pos(6) + Type(1) + Dir(1) + Color(3) = 11 bytes
+            const buffer = new ArrayBuffer(5 + cubesData.length * 11);
+            const view = new DataView(buffer);
+            let offset = 0;
+            
+            // Magic "SVRB"
+            view.setUint8(offset++, 83); 
+            view.setUint8(offset++, 86); 
+            view.setUint8(offset++, 82); 
+            view.setUint8(offset++, 66); 
+            
+            // Version
+            view.setUint8(offset++, 1);
+            
+            cubesData.forEach(c => {
+                // Pos (Int16)
+                view.setInt16(offset, c.x, true); offset += 2;
+                view.setInt16(offset, c.y, true); offset += 2;
+                view.setInt16(offset, c.z, true); offset += 2;
+                
+                // Type
+                let typeIdx = BLOCK_TYPES.indexOf(c.type);
+                if(typeIdx === -1) typeIdx = 0;
+                view.setUint8(offset++, typeIdx);
+                
+                // Dir
+                // Handle complex direction object from JSON {x:0, y:1, z:0}
+                const dirObj = c.dir || {x:0, y:1, z:0};
+                view.setUint8(offset++, getDirId(dirObj));
+                
+                // Color (Int -> RGB)
+                const col = c.color || 0xFFFFFF;
+                view.setUint8(offset++, (col >> 16) & 0xFF);
+                view.setUint8(offset++, (col >> 8) & 0xFF);
+                view.setUint8(offset++, col & 0xFF);
+            });
+            
+            return buffer;
+        }
+
+        function convert() {
+            const input = document.getElementById('file-input');
+            const status = document.getElementById('status');
+            if (input.files.length === 0) {
+                status.innerText = "Please select a file.";
+                return;
+            }
+
+            const file = input.files[0];
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    const jsonData = JSON.parse(e.target.result);
+                    if (!Array.isArray(jsonData)) throw new Error("Invalid JSON format");
+                    
+                    const buffer = encodeRobot(jsonData);
+                    const blob = new Blob([buffer], {type: "application/octet-stream"});
+                    
+                    const link = document.createElement("a");
+                    link.href = URL.createObjectURL(blob);
+                    // Change extension .json -> .svrobot
+                    let name = file.name.replace(/\.json$/i, "") + ".svrobot";
+                    link.download = name;
+                    link.click();
+                    
+                    status.innerText = "Conversion successful! Downloading " + name;
+                } catch (err) {
+                    console.error(err);
+                    status.innerText = "Error: " + err.message;
+                }
+            };
+            
+            reader.readAsText(file);
+        }
+    </script>
+</body>
+</html>
