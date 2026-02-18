@@ -81,7 +81,7 @@ if ('serviceWorker' in navigator) {
         <div class="menu-group">
             <button id="save-btn" class="btn" style="position:relative;">SAVE</button>
             <button id="load-btn" class="btn" style="position:relative;">LOAD</button>
-            <input type="file" id="file-input" accept=".json,.svrobot">
+            <input type="file" id="file-input" accept=".json,.svrobot,application/json,application/octet-stream">
         </div>
         <button id="mode-btn" class="btn" style="position:relative;">BATTLE START</button>
     </div>
@@ -688,7 +688,7 @@ if ('serviceWorker' in navigator) {
                 document.getElementById('file-input').value = '';
                 
             } catch (err) {
-                alert("ファイルの読み込みに失敗しました");
+                alert("ファイルの読み込みに失敗しました: " + err.message);
                 console.error(err);
             }
         };
