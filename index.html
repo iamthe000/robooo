@@ -768,7 +768,7 @@ if ('serviceWorker' in navigator) {
 
         // Save as SVR Text Format
         const svrText = generateSVR(robotData);
-        const blob = new Blob([svrText], {type: "text/plain"});
+        const blob = new Blob([svrText], {type: "application/octet-stream"});
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
         link.download = "my_robot.svrobot";
