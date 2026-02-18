@@ -518,6 +518,29 @@ if ('serviceWorker' in navigator) {
         {id: 5, x: 0, y: 0, z: -1} // FRONT (Z-)
     ];
 
+    const DIR_NAMES = ["UP", "DOWN", "RIGHT", "LEFT", "BACK", "FRONT"];
+
+    function getDirString(vec) {
+        const id = getDirId(vec);
+        return DIR_NAMES[id] || "UP";
+    }
+
+    function getVecFromDirString(str) {
+        const idx = DIR_NAMES.indexOf(str);
+        if (idx !== -1) return getDirVec(idx);
+        return new THREE.Vector3(0, 1, 0);
+    }
+
+    function intToHexString(intVal) {
+        return '#' + ('000000' + intVal.toString(16)).slice(-6).toUpperCase();
+    }
+
+    function hexStringToInt(str) {
+        if (!str) return 0xFFFFFF;
+        if (typeof str === 'number') return str; // Handle potential number input
+        return parseInt(str.replace(/^#/, ''), 16);
+    }
+
     function getDirId(vec) {
         let best = 0;
         let maxDot = -Infinity;
@@ -541,6 +564,80 @@ if ('serviceWorker' in navigator) {
     function getDirVec(id) {
         const d = DIR_VECTORS[id] || DIR_VECTORS[0];
         return new THREE.Vector3(d.x, d.y, d.z);
+    }
+
+    // --- SVR Custom Format Logic ---
+    function generateSVR(robotData) {
+        let lines = [];
+        lines.push("[SVR_HEADER]");
+        lines.push("VERSION=3.0");
+        lines.push("");
+        
+        lines.push("[PALETTE]");
+        // palette is dict {id: hex}
+        for (const [id, hex] of Object.entries(robotData.palette)) {
+            lines.push(`${id}=${hex}`);
+        }
+        lines.push("");
+        
+        lines.push("[LAYOUT]");
+        lines.push("# TYPE X Y Z COLOR_ID [DIR]");
+        
+        // robotData.layout is { type: [blocks...] }
+        for (const [type, blocks] of Object.entries(robotData.layout)) {
+            blocks.forEach(b => {
+                let line = `${type.toUpperCase()} ${b.x} ${b.y} ${b.z} ${b.color}`;
+                if (b.dir) {
+                    line += ` ${b.dir}`;
+                }
+                lines.push(line);
+            });
+        }
+        
+        return lines.join("\n");
+    }
+
+    function parseSVR(text) {
+        const lines = text.split(/\r?\n/);
+        let section = null;
+        
+        const palette = {};
+        const layout = {};
+        
+        for (let line of lines) {
+            line = line.trim();
+            if (!line || line.startsWith("#")) continue;
+            
+            if (line.startsWith("[")) {
+                section = line.slice(1, -1);
+                continue;
+            }
+            
+            if (section === "PALETTE") {
+                // id=hex
+                const parts = line.split("=");
+                if (parts.length === 2) {
+                    palette[parts[0].trim()] = parts[1].trim();
+                }
+            } else if (section === "LAYOUT") {
+                // TYPE X Y Z COLOR_ID [DIR]
+                // Space separated
+                const parts = line.split(/\s+/);
+                if (parts.length >= 5) {
+                    const type = parts[0].toLowerCase();
+                    const x = parseInt(parts[1]);
+                    const y = parseInt(parts[2]);
+                    const z = parseInt(parts[3]);
+                    const colorId = parts[4];
+                    const dir = parts.length > 5 ? parts[5] : undefined;
+                    
+                    if (!layout[type]) layout[type] = [];
+                    layout[type].push({x, y, z, color: colorId, dir});
+                }
+            }
+        }
+        
+        return { palette, layout };
     }
 
     function encodeRobot(cubesData) { 
@@ -623,19 +720,55 @@ if ('serviceWorker' in navigator) {
     function saveRobot() {
         if(isBattleMode) return;
         
-        const data = cubes.map(c => {
-            return {
-                x: c.position.x,
-                y: c.position.y,
-                z: c.position.z,
-                type: c.userData.type, 
-                color: c.userData.origColor,
-                dir: c.userData.direction
+        // 1. Analyze Palette
+        const paletteMap = new Map(); // hex -> id
+        const palette = {}; // id -> hex
+        let paletteIndex = 0;
+        
+        // 2. Group by Type
+        const layout = {};
+        
+        cubes.forEach(c => {
+            // Palette Logic
+            const hex = intToHexString(c.userData.origColor);
+            let colorId;
+            if (paletteMap.has(hex)) {
+                colorId = paletteMap.get(hex);
+            } else {
+                colorId = paletteIndex.toString();
+                paletteMap.set(hex, colorId);
+                palette[colorId] = hex;
+                paletteIndex++;
+            }
+            
+            // Layout Logic
+            const type = c.userData.type;
+            if (!layout[type]) layout[type] = [];
+            
+            const blockData = {
+                x: Math.round(c.position.x),
+                y: Math.round(c.position.y),
+                z: Math.round(c.position.z),
+                color: colorId
             };
+            
+            // Optimization: Omit default direction (UP)
+            const dirStr = getDirString(c.userData.direction);
+            if (dirStr !== 'UP') {
+                blockData.dir = dirStr;
+            }
+            
+            layout[type].push(blockData);
         });
 
-        const buffer = encodeRobot(data);
-        const blob = new Blob([buffer], {type: "application/octet-stream"});
+        const robotData = {
+            palette: palette,
+            layout: layout
+        };
+
+        // Save as SVR Text Format
+        const svrText = generateSVR(robotData);
+        const blob = new Blob([svrText], {type: "text/plain"});
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
         link.download = "my_robot.svrobot";
@@ -663,17 +796,91 @@ if ('serviceWorker' in navigator) {
                     
                     data = decodeRobot(buffer);
                 } else {
-                    // Try JSON
                     const decoder = new TextDecoder("utf-8");
                     const text = decoder.decode(buffer);
-                    const jsonData = JSON.parse(text);
-                    
-                    data = jsonData.map(d => ({
-                        x: d.x, y: d.y, z: d.z, 
-                        type: d.type, 
-                        color: d.color,
-                        dir: new THREE.Vector3(d.dir.x, d.dir.y, d.dir.z)
-                    }));
+                    let jsonData = null;
+                    let isJson = false;
+
+                    // Try JSON Detection
+                    try {
+                        if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
+                            jsonData = JSON.parse(text);
+                            isJson = true;
+                        }
+                    } catch(e) { isJson = false; }
+
+                    if (isJson) {
+                        if (Array.isArray(jsonData)) {
+                            // Legacy Format (Array)
+                            data = jsonData.map(d => {
+                                let dirVec;
+                                if (typeof d.dir === 'string') {
+                                    dirVec = getVecFromDirString(d.dir);
+                                } else if (d.dir && (typeof d.dir.x !== 'undefined')) {
+                                    dirVec = new THREE.Vector3(d.dir.x, d.dir.y, d.dir.z);
+                                } else {
+                                    dirVec = new THREE.Vector3(0, 1, 0);
+                                }
+                                
+                                let colorInt = d.color;
+                                if (typeof d.color === 'string') {
+                                    colorInt = hexStringToInt(d.color);
+                                }
+                                
+                                return {
+                                    x: d.x, y: d.y, z: d.z, 
+                                    type: d.type, 
+                                    color: colorInt,
+                                    dir: dirVec
+                                };
+                            });
+                        } else if (jsonData.layout) {
+                            // New Format V2 (Palette + Layout JSON) - Kept for compatibility
+                            const palette = jsonData.palette || {};
+                            const layout = jsonData.layout;
+                            
+                            Object.keys(layout).forEach(type => {
+                                const blocks = layout[type];
+                                blocks.forEach(b => {
+                                    let colorHex = palette[b.color] || b.color;
+                                    if (colorHex === undefined) colorHex = '#FFFFFF';
+                                    const colorInt = hexStringToInt(colorHex);
+                                    
+                                    const dirVec = b.dir ? getVecFromDirString(b.dir) : new THREE.Vector3(0, 1, 0);
+                                    
+                                    data.push({
+                                        x: b.x, y: b.y, z: b.z,
+                                        type: type,
+                                        color: colorInt,
+                                        dir: dirVec
+                                    });
+                                });
+                            });
+                        }
+                    } else {
+                        // Assume Custom SVR Text Format
+                        const svrData = parseSVR(text);
+                        const palette = svrData.palette || {};
+                        const layout = svrData.layout || {};
+                        
+                        Object.keys(layout).forEach(type => {
+                            const blocks = layout[type];
+                            blocks.forEach(b => {
+                                let colorHex = palette[b.color] || b.color;
+                                if (colorHex === undefined) colorHex = '#FFFFFF';
+                                const colorInt = hexStringToInt(colorHex);
+                                
+                                const dirVec = b.dir ? getVecFromDirString(b.dir) : new THREE.Vector3(0, 1, 0);
+                                
+                                data.push({
+                                    x: b.x, y: b.y, z: b.z,
+                                    type: type,
+                                    color: colorInt,
+                                    dir: dirVec
+                                });
+                            });
+                        });
+                    }
                 }
                 
                 for(let i=cubes.length-1; i>=0; i--) {
