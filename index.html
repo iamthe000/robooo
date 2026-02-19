@@ -1692,8 +1692,10 @@ if ('serviceWorker' in navigator) {
                                             const tPos = tCube.position.clone().applyMatrix4(enemy.group.matrixWorld);
                                             
                                             if (tPos.distanceTo(impactPos) < radius) {
-                                                // Half Damage
-                                                tCube.userData.hp = Math.floor(tCube.userData.hp / 2);
+                                                // Reduced Damage (Retain 75% -> 25% damage)
+                                                // Ensure hp is defined (default to 1)
+                                                const currentHp = (tCube.userData.hp !== undefined) ? tCube.userData.hp : 1;
+                                                tCube.userData.hp = Math.floor(currentHp * 0.75);
                                                 
                                                 createParticle(tPos, new THREE.Vector3(0,0,0), tCube.material.color.getHex(), 0.4, 20, 'smoke');
 
