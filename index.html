@@ -19,7 +19,8 @@
         #mode-btn { border-color: #00ccff; color: #00ccff; box-shadow: 0 0 10px rgba(0, 204, 255, 0.3); }
         #save-btn { border-color: #00ff00; color: #00ff00; }
         #load-btn { border-color: #ffff00; color: #ffff00; }
-
+        #view-btn { border-color: #ff00ff; color: #ff00ff; }
+        #view-back-btn { border-color: #ff00ff; color: #ff00ff; box-shadow: 0 0 10px rgba(255, 0, 255, 0.3); font-size: 16px; padding: 10px 24px; }
         
         #palette-container { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 5px; pointer-events: none; width: 90%; }
         #color-palette { display: flex; gap: 5px; margin-bottom: 5px; pointer-events: auto; background: rgba(0,0,0,0.5); padding: 5px; border-radius: 20px; }
@@ -81,6 +82,7 @@ if ('serviceWorker' in navigator) {
         <div class="menu-group">
             <button id="save-btn" class="btn" style="position:relative;">SAVE</button>
             <button id="load-btn" class="btn" style="position:relative;">LOAD</button>
+            <button id="view-btn" class="btn" style="position:relative;">VIEW</button>
             <input type="file" id="file-input" accept=".json,.svrobot,application/json,application/octet-stream">
         </div>
     <select id="difficulty-select" class="btn" style="position:relative; right:140px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.5); color: white; padding: 4px 8px; border-radius: 20px; font-weight: bold; font-size: 12px;">
@@ -89,6 +91,10 @@ if ('serviceWorker' in navigator) {
         <option value="hard">HARD</option>
     </select>
         <button id="mode-btn" class="btn" style="position:relative;">BATTLE START</button>
+    </div>
+
+    <div id="view-ui" style="display:none; position:absolute; top:20px; right:20px; pointer-events:auto;">
+        <button id="view-back-btn" class="btn">BACK</button>
     </div>
 
     <div id="palette-container">
@@ -151,6 +157,7 @@ if ('serviceWorker' in navigator) {
     let cubes = []; 
     let raycaster, mouse;
     let isBattleMode = false;
+    let isViewMode = false;
     let bullets = [];
     let particles = [];
     let stars, dust, gridHelper, buildGuides;
@@ -297,6 +304,8 @@ if ('serviceWorker' in navigator) {
         document.getElementById('save-btn').addEventListener('click', saveRobot);
         document.getElementById('load-btn').addEventListener('click', () => document.getElementById('file-input').click());
         document.getElementById('file-input').addEventListener('change', loadRobot);
+        document.getElementById('view-btn').addEventListener('click', toggleViewMode);
+        document.getElementById('view-back-btn').addEventListener('click', toggleViewMode);
         
         canvas.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -952,12 +961,50 @@ if ('serviceWorker' in navigator) {
     }
 
     
+    function toggleViewMode() {
+        isViewMode = !isViewMode;
+        
+        const topBar = document.getElementById('top-bar');
+        const paletteContainer = document.getElementById('palette-container');
+        const viewUI = document.getElementById('view-ui');
+        
+        if (isViewMode) {
+            topBar.style.display = 'none';
+            paletteContainer.style.display = 'none';
+            viewUI.style.display = 'block';
+            
+            stars.visible = true;
+            dust.visible = true;
+            gridHelper.visible = false;
+            if(buildGuides) buildGuides.visible = false;
+            ghostMesh.visible = false;
+            
+            scene.background = new THREE.Color(0x000000);
+            
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 2.0;
+        } else {
+            topBar.style.display = 'flex';
+            paletteContainer.style.display = 'flex';
+            viewUI.style.display = 'none';
+            
+            stars.visible = false;
+            dust.visible = false;
+            gridHelper.visible = true;
+            if(buildGuides) buildGuides.visible = true;
+            
+            scene.background = new THREE.Color(0x222428);
+            
+            controls.autoRotate = false;
+        }
+    }
+
     function toggleMode() {
         isBattleMode = !isBattleMode;
         const modeBtn = document.getElementById('mode-btn');
         const battleUI = document.getElementById('battle-ui');
         const paletteContainer = document.getElementById('palette-container');
-        const saveLoadBtns = document.querySelectorAll('#save-btn, #load-btn');
+        const saveLoadBtns = document.querySelectorAll('#save-btn, #load-btn, #view-btn');
         const diffSelect = document.getElementById('difficulty-select');
         const crosshair = document.getElementById('crosshair');
 
@@ -1267,7 +1314,7 @@ if ('serviceWorker' in navigator) {
     }
 
     function onPointerMove(e) {
-        if (!isBattleMode) updateGhostCursor(e);
+        if (!isBattleMode && !isViewMode) updateGhostCursor(e);
 
         if(isDragging) {
             const dx = e.clientX - startX;
@@ -1315,7 +1362,7 @@ if ('serviceWorker' in navigator) {
     }
 
     function handleTap(e) {
-        if (isBattleMode) return;
+        if (isBattleMode || isViewMode) return;
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
