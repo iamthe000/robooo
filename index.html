@@ -83,6 +83,11 @@ if ('serviceWorker' in navigator) {
             <button id="load-btn" class="btn" style="position:relative;">LOAD</button>
             <input type="file" id="file-input" accept=".json,.svrobot,application/json,application/octet-stream">
         </div>
+    <select id="difficulty-select" class="btn" style="position:relative; right:140px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.5); color: white; padding: 4px 8px; border-radius: 20px; font-weight: bold; font-size: 12px;">
+        <option value="easy">EASY</option>
+        <option value="normal" selected>NORMAL</option>
+        <option value="hard">HARD</option>
+    </select>
         <button id="mode-btn" class="btn" style="position:relative;">BATTLE START</button>
     </div>
 
@@ -207,6 +212,14 @@ if ('serviceWorker' in navigator) {
         missile: false,
         all: false
     };
+
+    const DIFFICULTY_SETTINGS = {
+        easy: { maxEnemies: 3, spawnRate: 300, fireInterval: 200, enemyType: 'easy' },
+        normal: { maxEnemies: 5, spawnRate: 200, fireInterval: 150, enemyType: 'normal' },
+        hard: { maxEnemies: 8, spawnRate: 100, fireInterval: 80, enemyType: 'hard' }
+    };
+
+    let currentDifficulty = DIFFICULTY_SETTINGS.normal;
 
     // HUD Variables
     let sceneHUD, cameraHUD;
@@ -941,15 +954,19 @@ if ('serviceWorker' in navigator) {
         const battleUI = document.getElementById('battle-ui');
         const paletteContainer = document.getElementById('palette-container');
         const saveLoadBtns = document.querySelectorAll('#save-btn, #load-btn');
+        const diffSelect = document.getElementById('difficulty-select');
         const crosshair = document.getElementById('crosshair');
 
         if (isBattleMode) {
+            currentDifficulty = DIFFICULTY_SETTINGS[diffSelect.value] || DIFFICULTY_SETTINGS.normal;
+            
             modeBtn.innerText = "BUILD";
             modeBtn.style.borderColor = "orange";
             modeBtn.style.color = "orange";
             battleUI.style.display = 'block';
             paletteContainer.style.display = 'none';
             saveLoadBtns.forEach(b => b.style.display = 'none'); 
+            diffSelect.style.display = 'none';
             crosshair.style.opacity = 1;
 
             scene.background = new THREE.Color(0x000000);
@@ -978,6 +995,7 @@ if ('serviceWorker' in navigator) {
             battleUI.style.display = 'none';
             paletteContainer.style.display = 'flex';
             saveLoadBtns.forEach(b => b.style.display = 'block');
+            diffSelect.style.display = 'block';
             crosshair.style.opacity = 0;
 
             scene.background = new THREE.Color(0x222428);
@@ -1475,7 +1493,7 @@ if ('serviceWorker' in navigator) {
             camera.lookAt(robotGroup.position);
 
             spawnTimer++;
-            if (spawnTimer > 200 && enemies.length < 5) {
+            if (spawnTimer > currentDifficulty.spawnRate && enemies.length < currentDifficulty.maxEnemies) {
                 const rx = (Math.random() - 0.5) * 100;
                 const rz = -40 - Math.random() * 60;
                 spawnEnemy(rx, (Math.random()-0.5)*20, rz);
@@ -1490,7 +1508,8 @@ if ('serviceWorker' in navigator) {
                 }
                 
                 e.fireTimer++;
-                if (e.fireTimer > 150) {
+                const limit = e.fireInterval || currentDifficulty.fireInterval;
+                if (e.fireTimer > limit) {
                     fireBullet(false, e.group, e.cubes);
                     e.fireTimer = Math.random() * 50;
                 }
@@ -1593,37 +1612,46 @@ if ('serviceWorker' in navigator) {
                                     break;
                                 }
 
-                                let exScale = 0.8;
-                                if (b.userData.isMissile) exScale = 3.0;
-                                if (b.userData.isCannon) exScale = 4.0;
+                                c.userData.hp = (c.userData.hp || 1) - 1;
+                                
+                                if (c.userData.hp <= 0) {
+                                    let exScale = 0.8;
+                                    if (b.userData.isMissile) exScale = 3.0;
+                                    if (b.userData.isCannon) exScale = 4.0;
 
-                                createExplosion(worldPos, c.material.color.getHex(), exScale); // Block destroyed
+                                    createExplosion(worldPos, c.material.color.getHex(), exScale); // Block destroyed
 
-                                // AOE Damage for Cannon
-                                if (b.userData.isCannon) {
-                                    const impactPos = worldPos.clone();
-                                    const radius = 2.5; 
-                                    
-                                    // Iterate backwards to allow removal
-                                    for (let m = enemy.cubes.length - 1; m >= 0; m--) {
-                                        const targetCube = enemy.cubes[m];
-                                        if (targetCube === c) {
-                                             enemy.group.remove(c);
-                                             enemy.cubes.splice(m, 1);
-                                             continue;
-                                        }
+                                    // AOE Damage for Cannon
+                                    if (b.userData.isCannon) {
+                                        const impactPos = worldPos.clone();
+                                        const radius = 2.5; 
                                         
-                                        const tPos = targetCube.position.clone().applyMatrix4(enemy.group.matrixWorld);
-                                        if (tPos.distanceTo(impactPos) <= radius) {
-                                            // Destroy surrounding block
-                                            createParticle(tPos, new THREE.Vector3(0,0,0), targetCube.material.color.getHex(), 0.5, 20, 'normal');
-                                            enemy.group.remove(targetCube);
-                                            enemy.cubes.splice(m, 1);
+                                        // Iterate backwards to allow removal
+                                        for (let m = enemy.cubes.length - 1; m >= 0; m--) {
+                                            const targetCube = enemy.cubes[m];
+                                            if (targetCube === c) {
+                                                enemy.group.remove(c);
+                                                enemy.cubes.splice(m, 1);
+                                                continue;
+                                            }
+                                            
+                                            const tPos = targetCube.position.clone().applyMatrix4(enemy.group.matrixWorld);
+                                            if (tPos.distanceTo(impactPos) <= radius) {
+                                                // Destroy surrounding block
+                                                createParticle(tPos, new THREE.Vector3(0,0,0), targetCube.material.color.getHex(), 0.5, 20, 'normal');
+                                                enemy.group.remove(targetCube);
+                                                enemy.cubes.splice(m, 1);
+                                            }
                                         }
+                                    } else {
+                                        enemy.group.remove(c);
+                                        enemy.cubes.splice(j, 1);
                                     }
                                 } else {
-                                    enemy.group.remove(c);
-                                    enemy.cubes.splice(j, 1);
+                                    // Flash
+                                    const orig = c.material.color.getHex();
+                                    c.material.color.setHex(0xffffff);
+                                    setTimeout(()=>{ if(c.parent) c.material.color.setHex(orig); }, 50);
                                 }
 
                                 hitEnemy = true;
@@ -2060,6 +2088,38 @@ if ('serviceWorker' in navigator) {
         renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
+    function getEnemyLayout(type) {
+        const core = {x:0, y:0, z:0, type:'core', dir:new THREE.Vector3(0,0,1)};
+        const engine = {x:0, y:0, z:-1, type:'engine', dir:new THREE.Vector3(0,0,-1)};
+        
+        if (type === 'easy') {
+            return [
+                core, engine,
+                {x:0, y:1, z:0, type:'turret', dir:new THREE.Vector3(0,1,0)}
+            ];
+        } else if (type === 'hard') {
+            return [
+                core, engine,
+                {x:1, y:0, z:0, type:'armor', dir:new THREE.Vector3(1,0,0)},
+                {x:-1, y:0, z:0, type:'armor', dir:new THREE.Vector3(-1,0,0)},
+                {x:1, y:0, z:1, type:'missile', dir:new THREE.Vector3(0,0,1)},
+                {x:-1, y:0, z:1, type:'missile', dir:new THREE.Vector3(0,0,1)},
+                {x:0, y:1, z:0, type:'armor', dir:new THREE.Vector3(0,1,0)},
+                {x:0, y:-1, z:0, type:'armor', dir:new THREE.Vector3(0,-1,0)}
+            ];
+        } else {
+            return [
+                core, engine,
+                {x:1, y:0, z:0, type:'normal', dir:new THREE.Vector3(1,0,0)},
+                {x:-1, y:0, z:0, type:'normal', dir:new THREE.Vector3(-1,0,0)},
+                {x:1, y:0, z:1, type:'turret', dir:new THREE.Vector3(0,0,1)},
+                {x:-1, y:0, z:1, type:'turret', dir:new THREE.Vector3(0,0,1)},
+                {x:0, y:1, z:0, type:'normal', dir:new THREE.Vector3(0,1,0)},
+                {x:0, y:-1, z:0, type:'normal', dir:new THREE.Vector3(0,-1,0)}
+            ];
+        }
+    }
+
     function spawnEnemy(x, y, z) {
         const group = new THREE.Group();
         const cubesArr = [];
@@ -2067,16 +2127,7 @@ if ('serviceWorker' in navigator) {
         group.position.set(x, y, z);
         group.lookAt(robotGroup.position);
 
-        const blocks = [
-            {x:0, y:0, z:0, type:'core', dir:new THREE.Vector3(0,0,1)},
-            {x:0, y:0, z:-1, type:'engine', dir:new THREE.Vector3(0,0,-1)},
-            {x:1, y:0, z:0, type:'normal', dir:new THREE.Vector3(1,0,0)},
-            {x:-1, y:0, z:0, type:'normal', dir:new THREE.Vector3(-1,0,0)},
-            {x:1, y:0, z:1, type:'turret', dir:new THREE.Vector3(0,0,1)},
-            {x:-1, y:0, z:1, type:'turret', dir:new THREE.Vector3(0,0,1)},
-            {x:0, y:1, z:0, type:'normal', dir:new THREE.Vector3(0,1,0)},
-            {x:0, y:-1, z:0, type:'normal', dir:new THREE.Vector3(0,-1,0)}
-        ];
+        const blocks = getEnemyLayout(currentDifficulty.enemyType);
 
         blocks.forEach(b => {
             const geometry = new THREE.BoxGeometry(1, 1, 1);
@@ -2086,6 +2137,8 @@ if ('serviceWorker' in navigator) {
             if (b.type === 'core') { color = 0x00ff00; emissive = 0x003300; }
             if (b.type === 'engine') { color = 0xff3300; emissive = 0x330000; }
             if (b.type === 'turret') { color = 0xffd700; emissive = 0x332200; }
+            if (b.type === 'armor') { color = 0x888888; emissive = 0x000000; }
+            if (b.type === 'missile') { color = 0x444444; emissive = 0x000000; }
 
             const material = new THREE.MeshStandardMaterial({ 
                 color: color, roughness: 0.3, metalness: 0.5, emissive: emissive
@@ -2093,27 +2146,28 @@ if ('serviceWorker' in navigator) {
             
             const cube = new THREE.Mesh(geometry, material);
             cube.position.set(b.x, b.y, b.z);
-            cube.userData = { type: b.type, direction: b.dir };
+            
+            let hp = 3;
+            if (b.type === 'armor') hp = 10;
+            
+            cube.userData = { 
+                type: b.type, 
+                direction: b.dir,
+                hp: hp,
+                maxHp: hp
+            };
 
             const edges = new THREE.EdgesGeometry(geometry);
             const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 }));
             cube.add(line);
 
-            if (b.type === 'engine' || b.type === 'turret') {
-                let partGeo, partMat, offsetNum;
-                if(b.type === 'engine') {
-                    partGeo = new THREE.ConeGeometry(0.3, 0.5, 8);
-                    partMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
-                    offsetNum = 0.3;
-                    cube.userData.isEngine = true;
-                    cube.userData.thrustDir = b.dir;
-                } else {
-                    partGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.8, 8);
-                    partMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8 });
-                    offsetNum = 0.4;
-                    cube.userData.isTurret = true;
-                    cube.userData.fireDir = b.dir;
-                }
+            if (b.type === 'engine') {
+                const partGeo = new THREE.ConeGeometry(0.3, 0.5, 8);
+                const partMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+                const offsetNum = 0.3;
+                cube.userData.isEngine = true;
+                cube.userData.thrustDir = b.dir;
+                
                 const part = new THREE.Mesh(partGeo, partMat);
                 const quaternion = new THREE.Quaternion();
                 quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.dir);
@@ -2121,12 +2175,63 @@ if ('serviceWorker' in navigator) {
                 part.position.add(b.dir.clone().multiplyScalar(offsetNum));
                 cube.add(part);
             }
+            else if (b.type === 'turret') {
+                const partGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.8, 8);
+                const partMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8 });
+                const offsetNum = 0.4;
+                cube.userData.isTurret = true;
+                cube.userData.fireDir = b.dir;
+                
+                const part = new THREE.Mesh(partGeo, partMat);
+                const quaternion = new THREE.Quaternion();
+                quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.dir);
+                part.setRotationFromQuaternion(quaternion);
+                part.position.add(b.dir.clone().multiplyScalar(offsetNum));
+                cube.add(part);
+            }
+            else if (b.type === 'missile') {
+                cube.userData.isTurret = true;
+                cube.userData.subType = 'missile';
+                cube.userData.fireDir = b.dir;
+                cube.userData.reloadTimer = 0;
+                cube.userData.missileReloadTime = 240;
+
+                const group = new THREE.Group();
+                const quaternion = new THREE.Quaternion();
+                quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.dir);
+                group.setRotationFromQuaternion(quaternion);
+                group.position.add(b.dir.clone().multiplyScalar(0.2)); 
+                
+                const podGeo = new THREE.BoxGeometry(0.6, 0.6, 0.8);
+                const podMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.6, roughness: 0.4 });
+                const pod = new THREE.Mesh(podGeo, podMat);
+                group.add(pod);
+
+                const tubeGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.2, 8);
+                const tubeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+                const offsets = [
+                    {x: -0.15, y: 0.15}, {x: 0.15, y: 0.15},
+                    {x: -0.15, y: -0.15}, {x: 0.15, y: -0.15}
+                ];
+                offsets.forEach(off => {
+                    const tube = new THREE.Mesh(tubeGeo, tubeMat);
+                    tube.rotation.x = Math.PI / 2;
+                    tube.position.set(off.x, off.y, 0.4);
+                    group.add(tube);
+                });
+                cube.add(group);
+            }
 
             group.add(cube);
             cubesArr.push(cube);
         });
         
-        enemies.push({ group: group, cubes: cubesArr, fireTimer: Math.random() * 100 });
+        enemies.push({ 
+            group: group, 
+            cubes: cubesArr, 
+            fireTimer: Math.random() * 100,
+            fireInterval: currentDifficulty.fireInterval 
+        });
     }
 
     function updateWeapons() {
