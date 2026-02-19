@@ -2080,8 +2080,9 @@ if ('serviceWorker' in navigator) {
                 const isTriple = (c.userData.subType === 'triple');
                 const isMissile = (c.userData.subType === 'missile');
                 const isCannon = (c.userData.subType === 'cannon');
+                const isInterceptor = (c.userData.subType === 'interceptor');
 
-                if (targetType === 'normal' && (isTriple || isMissile || isCannon)) return;
+                if (targetType === 'normal' && (isTriple || isMissile || isCannon || isInterceptor)) return;
                 if (targetType === 'triple' && !isTriple) return;
                 if (targetType === 'missile' && !isMissile) return;
                 if (targetType === 'cannon' && !isCannon) return;
