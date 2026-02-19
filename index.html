@@ -216,7 +216,7 @@ if ('serviceWorker' in navigator) {
     const DIFFICULTY_SETTINGS = {
         easy: { maxEnemies: 3, spawnRate: 300, fireInterval: 200, enemyType: 'easy' },
         normal: { maxEnemies: 5, spawnRate: 200, fireInterval: 150, enemyType: 'normal' },
-        hard: { maxEnemies: 8, spawnRate: 100, fireInterval: 80, enemyType: 'hard' }
+        hard: { maxEnemies: 10, spawnRate: 60, fireInterval: 50, enemyType: 'hard' }
     };
 
     let currentDifficulty = DIFFICULTY_SETTINGS.normal;
@@ -1604,58 +1604,94 @@ if ('serviceWorker' in navigator) {
                             if (worldPos.distanceTo(b.position) < 0.8) {
                                 createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), 0xffffff, 0.3, 5, 'explosion'); // Hit flash
                                 
-                                if (c.userData.type === 'core') {
-                                    createExplosion(enemy.group.position, 0xffa500, 2.5); // Core destroyed big explosion
-                                    scene.remove(enemy.group);
-                                    enemies.splice(k, 1);
+                                if (b.userData.isMissile) {
+                                    // Missile Logic: Large AOE but Half Damage
+                                    createExplosion(worldPos, 0xff00ff, 3.0); 
+                                    
+                                    const impactPos = worldPos.clone();
+                                    const radius = 6.0; // Large radius
+
+                                    // Iterate backwards
+                                    for (let m = enemy.cubes.length - 1; m >= 0; m--) {
+                                        const tCube = enemy.cubes[m];
+                                        const tPos = tCube.position.clone().applyMatrix4(enemy.group.matrixWorld);
+                                        
+                                        if (tPos.distanceTo(impactPos) < radius) {
+                                            // Half Damage
+                                            tCube.userData.hp = Math.floor(tCube.userData.hp / 2);
+                                            
+                                            createParticle(tPos, new THREE.Vector3(0,0,0), tCube.material.color.getHex(), 0.4, 20, 'smoke');
+
+                                            if (tCube.userData.hp <= 0) {
+                                                createExplosion(tPos, tCube.material.color.getHex(), 0.8);
+                                                enemy.group.remove(tCube);
+                                                enemy.cubes.splice(m, 1);
+                                                
+                                                if (tCube.userData.type === 'core') {
+                                                    createExplosion(enemy.group.position, 0xffa500, 2.5);
+                                                    scene.remove(enemy.group);
+                                                    enemies.splice(k, 1);
+                                                    hitEnemy = true;
+                                                    break; 
+                                                }
+                                            } else {
+                                                const orig = tCube.material.color.getHex();
+                                                tCube.material.color.setHex(0xffffff);
+                                                setTimeout(()=>{ if(tCube.parent) tCube.material.color.setHex(orig); }, 50);
+                                            }
+                                        }
+                                    }
+                                    hitEnemy = true;
+                                    break;
+                                } else {
+                                    if (c.userData.type === 'core') {
+                                        createExplosion(enemy.group.position, 0xffa500, 2.5); 
+                                        scene.remove(enemy.group);
+                                        enemies.splice(k, 1);
+                                        hitEnemy = true;
+                                        break;
+                                    }
+
+                                    c.userData.hp = (c.userData.hp || 1) - 1;
+                                    
+                                    if (c.userData.hp <= 0) {
+                                        let exScale = 0.8;
+                                        if (b.userData.isCannon) exScale = 4.0;
+
+                                        createExplosion(worldPos, c.material.color.getHex(), exScale); 
+
+                                        if (b.userData.isCannon) {
+                                            const impactPos = worldPos.clone();
+                                            const radius = 2.5; 
+                                            
+                                            for (let m = enemy.cubes.length - 1; m >= 0; m--) {
+                                                const targetCube = enemy.cubes[m];
+                                                if (targetCube === c) {
+                                                    enemy.group.remove(c);
+                                                    enemy.cubes.splice(m, 1);
+                                                    continue;
+                                                }
+                                                
+                                                const tPos = targetCube.position.clone().applyMatrix4(enemy.group.matrixWorld);
+                                                if (tPos.distanceTo(impactPos) <= radius) {
+                                                    createParticle(tPos, new THREE.Vector3(0,0,0), targetCube.material.color.getHex(), 0.5, 20, 'normal');
+                                                    enemy.group.remove(targetCube);
+                                                    enemy.cubes.splice(m, 1);
+                                                }
+                                            }
+                                        } else {
+                                            enemy.group.remove(c);
+                                            enemy.cubes.splice(j, 1);
+                                        }
+                                    } else {
+                                        const orig = c.material.color.getHex();
+                                        c.material.color.setHex(0xffffff);
+                                        setTimeout(()=>{ if(c.parent) c.material.color.setHex(orig); }, 50);
+                                    }
+
                                     hitEnemy = true;
                                     break;
                                 }
-
-                                c.userData.hp = (c.userData.hp || 1) - 1;
-                                
-                                if (c.userData.hp <= 0) {
-                                    let exScale = 0.8;
-                                    if (b.userData.isMissile) exScale = 3.0;
-                                    if (b.userData.isCannon) exScale = 4.0;
-
-                                    createExplosion(worldPos, c.material.color.getHex(), exScale); // Block destroyed
-
-                                    // AOE Damage for Cannon
-                                    if (b.userData.isCannon) {
-                                        const impactPos = worldPos.clone();
-                                        const radius = 2.5; 
-                                        
-                                        // Iterate backwards to allow removal
-                                        for (let m = enemy.cubes.length - 1; m >= 0; m--) {
-                                            const targetCube = enemy.cubes[m];
-                                            if (targetCube === c) {
-                                                enemy.group.remove(c);
-                                                enemy.cubes.splice(m, 1);
-                                                continue;
-                                            }
-                                            
-                                            const tPos = targetCube.position.clone().applyMatrix4(enemy.group.matrixWorld);
-                                            if (tPos.distanceTo(impactPos) <= radius) {
-                                                // Destroy surrounding block
-                                                createParticle(tPos, new THREE.Vector3(0,0,0), targetCube.material.color.getHex(), 0.5, 20, 'normal');
-                                                enemy.group.remove(targetCube);
-                                                enemy.cubes.splice(m, 1);
-                                            }
-                                        }
-                                    } else {
-                                        enemy.group.remove(c);
-                                        enemy.cubes.splice(j, 1);
-                                    }
-                                } else {
-                                    // Flash
-                                    const orig = c.material.color.getHex();
-                                    c.material.color.setHex(0xffffff);
-                                    setTimeout(()=>{ if(c.parent) c.material.color.setHex(orig); }, 50);
-                                }
-
-                                hitEnemy = true;
-                                break;
                             }
                         }
                         if (hitEnemy) break;
@@ -2100,12 +2136,18 @@ if ('serviceWorker' in navigator) {
         } else if (type === 'hard') {
             return [
                 core, engine,
-                {x:1, y:0, z:0, type:'armor', dir:new THREE.Vector3(1,0,0)},
-                {x:-1, y:0, z:0, type:'armor', dir:new THREE.Vector3(-1,0,0)},
-                {x:1, y:0, z:1, type:'missile', dir:new THREE.Vector3(0,0,1)},
-                {x:-1, y:0, z:1, type:'missile', dir:new THREE.Vector3(0,0,1)},
-                {x:0, y:1, z:0, type:'armor', dir:new THREE.Vector3(0,1,0)},
-                {x:0, y:-1, z:0, type:'armor', dir:new THREE.Vector3(0,-1,0)}
+                // Front Armor Shield
+                {x:0, y:0, z:1, type:'armor', dir:new THREE.Vector3(0,0,1)},
+                {x:1, y:0, z:1, type:'armor', dir:new THREE.Vector3(0,0,1)},
+                {x:-1, y:0, z:1, type:'armor', dir:new THREE.Vector3(0,0,1)},
+                {x:0, y:1, z:1, type:'armor', dir:new THREE.Vector3(0,0,1)},
+                {x:0, y:-1, z:1, type:'armor', dir:new THREE.Vector3(0,0,1)},
+                // Shoulder Missiles
+                {x:1, y:1, z:0, type:'missile', dir:new THREE.Vector3(0,0,1)},
+                {x:-1, y:1, z:0, type:'missile', dir:new THREE.Vector3(0,0,1)},
+                // Wing Triples
+                {x:2, y:0, z:0, type:'triple', dir:new THREE.Vector3(0,0,1)},
+                {x:-2, y:0, z:0, type:'triple', dir:new THREE.Vector3(0,0,1)}
             ];
         } else {
             return [
