@@ -113,6 +113,7 @@ if ('serviceWorker' in navigator) {
             <div id="p-triple" class="palette-item" onclick="selectBlock('triple')">TRIPLE</div>
             <div id="p-missile" class="palette-item" onclick="selectBlock('missile')">MISSILE</div>
             <div id="p-cannon" class="palette-item" onclick="selectBlock('cannon')">CANNON</div>
+            <div id="p-interceptor" class="palette-item" style="background: #334433; border-color: #00ffaa; color: #00ffaa;" onclick="selectBlock('interceptor')">INTCPT</div>
             <div id="p-delete" class="palette-item" onclick="selectBlock('delete')">DEL</div>
         </div>
     </div>
@@ -181,14 +182,16 @@ if ('serviceWorker' in navigator) {
         normal: { fireDelay: 15, maxAmmo: 50, reloadTime: 120 }, // Slower fire, larger mag
         triple: { fireDelay: 5, maxAmmo: 25, reloadTime: 90 },    // Fast fire, smaller mag (frequent reload)
         missile: { fireDelay: 30, maxAmmo: 1, reloadTime: 1 }, // Reload is per-block
-        cannon: { fireDelay: 20, maxAmmo: 3, reloadTime: 300 } // Long reload, limited ammo
+        cannon: { fireDelay: 20, maxAmmo: 3, reloadTime: 300 }, // Long reload, limited ammo
+        interceptor: { fireDelay: 4, maxAmmo: 25, reloadTime: 90 } // Fast fire, same ammo as triple
     };
 
     let weaponState = {
         normal: { cooldown: 0, ammo: 50, reloadTimer: 0 },
         triple: { cooldown: 0, ammo: 25, reloadTimer: 0 },
         missile: { cooldown: 0, ammo: 1, reloadTimer: 0 },
-        cannon: { cooldown: 0, ammo: 3, reloads: [0, 0, 0] }
+        cannon: { cooldown: 0, ammo: 3, reloads: [0, 0, 0] },
+        interceptor: { cooldown: 0, ammo: 25, reloadTimer: 0 }
     };
     
     let inputState = {
@@ -309,7 +312,8 @@ if ('serviceWorker' in navigator) {
             if(key === '5') selectBlock('triple');
             if(key === '6') selectBlock('missile');
             if(key === '7') selectBlock('cannon');
-            if(key === '8') selectBlock('delete');
+            if(key === '8') selectBlock('interceptor');
+            if(key === '9') selectBlock('delete');
         });
 
         setupJoystick();
@@ -553,7 +557,7 @@ if ('serviceWorker' in navigator) {
         scene.add(buildGuides);
     }
 
-    const BLOCK_TYPES = ['normal', 'armor', 'engine', 'turret', 'triple', 'missile', 'cannon', 'core'];
+    const BLOCK_TYPES = ['normal', 'armor', 'engine', 'turret', 'triple', 'missile', 'cannon', 'interceptor', 'core'];
     const DIR_VECTORS = [
         {id: 0, x: 0, y: 1, z: 0}, // UP
         {id: 1, x: 0, y: -1, z: 0}, // DOWN
@@ -1053,6 +1057,7 @@ if ('serviceWorker' in navigator) {
         if (type === 'turret') { color = 0xffd700; emissive = 0x332200; }
         if (type === 'triple') { color = 0xffaa00; emissive = 0x332200; }
         if (type === 'cannon') { color = 0x444444; }
+        if (type === 'interceptor') { color = 0x00ffaa; emissive = 0x003311; }
         
         if (colorOverride !== null && colorOverride !== undefined) {
             color = colorOverride;
@@ -1207,6 +1212,41 @@ if ('serviceWorker' in navigator) {
                 tube.position.set(off.x, off.y, 0.4); // Front face
                 group.add(tube);
             });
+
+            cube.add(group);
+        }
+
+        if (type === 'interceptor') {
+            cube.userData.isTurret = true;
+            cube.userData.subType = 'interceptor';
+            cube.userData.fireDir = direction;
+
+            const group = new THREE.Group();
+            const quaternion = new THREE.Quaternion();
+            quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+            group.setRotationFromQuaternion(quaternion);
+            group.position.add(direction.clone().multiplyScalar(0.3)); 
+            
+            // Base
+            const baseGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.2, 8);
+            const baseMat = new THREE.MeshStandardMaterial({ color: 0x334433, metalness: 0.6 });
+            const base = new THREE.Mesh(baseGeo, baseMat);
+            group.add(base);
+
+            // Dome/Radar
+            const domeGeo = new THREE.SphereGeometry(0.25, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.5);
+            const domeMat = new THREE.MeshStandardMaterial({ color: 0x00ffaa, emissive: 0x004422, roughness: 0.2, metalness: 0.8 });
+            const dome = new THREE.Mesh(domeGeo, domeMat);
+            dome.position.y = 0.1;
+            group.add(dome);
+            
+            // Small barrels (CIWS style)
+            const barrelGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.6, 6);
+            const barrelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+            const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+            barrel.rotation.x = Math.PI / 4; // Angled up slightly
+            barrel.position.set(0, 0.3, 0.2);
+            group.add(barrel);
 
             cube.add(group);
         }
@@ -1380,6 +1420,9 @@ if ('serviceWorker' in navigator) {
             }
 
             const input = getInputState();
+
+            // Auto Interception Logic
+            updateInterceptors();
 
             const fireAll = input.fire || inputState.fireAll; // Combined fire
             const fireNormal = inputState.fireNormal || gamepadFireState.normal;
@@ -1596,109 +1639,169 @@ if ('serviceWorker' in navigator) {
 
                 if (b.userData.isPlayer) {
                     let hitEnemy = false;
-                    for (let k = enemies.length - 1; k >= 0; k--) {
-                        const enemy = enemies[k];
-                        for (let j = enemy.cubes.length - 1; j >= 0; j--) {
-                            const c = enemy.cubes[j];
-                            const worldPos = c.position.clone().applyMatrix4(enemy.group.matrixWorld);
-                            if (worldPos.distanceTo(b.position) < 0.8) {
-                                createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), 0xffffff, 0.3, 5, 'explosion'); // Hit flash
-                                
-                                if (b.userData.isMissile) {
-                                    // Missile Logic: Large AOE but Half Damage
-                                    createExplosion(worldPos, 0xff00ff, 3.0); 
+                    
+                    // Interceptor Logic: Check for collision with ENEMY BULLETS (Missiles)
+                    if (b.userData.isInterceptor) {
+                        for (let k = bullets.length - 1; k >= 0; k--) {
+                            const enemyBullet = bullets[k];
+                            // Must be enemy, missile, and alive
+                            if (!enemyBullet.userData.isPlayer && enemyBullet.userData.isMissile) {
+                                if (enemyBullet.position.distanceTo(b.position) < 1.0) {
+                                    // Hit! Destroy both
+                                    createParticle(b.position, new THREE.Vector3(0,0,0), 0x00ffaa, 0.5, 10, 'explosion');
+                                    createExplosion(enemyBullet.position, 0xff0000, 0.5); // Small explosion for missile
                                     
-                                    const impactPos = worldPos.clone();
-                                    const radius = 6.0; // Large radius
-
-                                    // Iterate backwards
-                                    for (let m = enemy.cubes.length - 1; m >= 0; m--) {
-                                        const tCube = enemy.cubes[m];
-                                        const tPos = tCube.position.clone().applyMatrix4(enemy.group.matrixWorld);
-                                        
-                                        if (tPos.distanceTo(impactPos) < radius) {
-                                            // Half Damage
-                                            tCube.userData.hp = Math.floor(tCube.userData.hp / 2);
-                                            
-                                            createParticle(tPos, new THREE.Vector3(0,0,0), tCube.material.color.getHex(), 0.4, 20, 'smoke');
-
-                                            if (tCube.userData.hp <= 0) {
-                                                createExplosion(tPos, tCube.material.color.getHex(), 0.8);
-                                                enemy.group.remove(tCube);
-                                                enemy.cubes.splice(m, 1);
-                                                
-                                                if (tCube.userData.type === 'core') {
-                                                    createExplosion(enemy.group.position, 0xffa500, 2.5);
-                                                    scene.remove(enemy.group);
-                                                    enemies.splice(k, 1);
-                                                    hitEnemy = true;
-                                                    break; 
-                                                }
-                                            } else {
-                                                const orig = tCube.material.color.getHex();
-                                                tCube.material.color.setHex(0xffffff);
-                                                setTimeout(()=>{ if(tCube.parent) tCube.material.color.setHex(orig); }, 50);
-                                            }
-                                        }
-                                    }
-                                    hitEnemy = true;
-                                    break;
-                                } else {
-                                    if (c.userData.type === 'core') {
-                                        createExplosion(enemy.group.position, 0xffa500, 2.5); 
-                                        scene.remove(enemy.group);
-                                        enemies.splice(k, 1);
-                                        hitEnemy = true;
-                                        break;
-                                    }
-
-                                    c.userData.hp = (c.userData.hp || 1) - 1;
+                                    // Mark enemy bullet for death (don't splice here to avoid index shift)
+                                    enemyBullet.userData.life = 0;
+                                    enemyBullet.visible = false;
                                     
-                                    if (c.userData.hp <= 0) {
-                                        let exScale = 0.8;
-                                        if (b.userData.isCannon) exScale = 4.0;
-
-                                        createExplosion(worldPos, c.material.color.getHex(), exScale); 
-
-                                        if (b.userData.isCannon) {
-                                            const impactPos = worldPos.clone();
-                                            const radius = 2.5; 
-                                            
-                                            for (let m = enemy.cubes.length - 1; m >= 0; m--) {
-                                                const targetCube = enemy.cubes[m];
-                                                if (targetCube === c) {
-                                                    enemy.group.remove(c);
-                                                    enemy.cubes.splice(m, 1);
-                                                    continue;
-                                                }
-                                                
-                                                const tPos = targetCube.position.clone().applyMatrix4(enemy.group.matrixWorld);
-                                                if (tPos.distanceTo(impactPos) <= radius) {
-                                                    createParticle(tPos, new THREE.Vector3(0,0,0), targetCube.material.color.getHex(), 0.5, 20, 'normal');
-                                                    enemy.group.remove(targetCube);
-                                                    enemy.cubes.splice(m, 1);
-                                                }
-                                            }
-                                        } else {
-                                            enemy.group.remove(c);
-                                            enemy.cubes.splice(j, 1);
-                                        }
-                                    } else {
-                                        const orig = c.material.color.getHex();
-                                        c.material.color.setHex(0xffffff);
-                                        setTimeout(()=>{ if(c.parent) c.material.color.setHex(orig); }, 50);
-                                    }
-
-                                    hitEnemy = true;
+                                    hitEnemy = true; // Signals caller to remove 'b' (interceptor bullet)
                                     break;
                                 }
                             }
                         }
-                        if (hitEnemy) break;
+                    }
+
+                    if (!hitEnemy) {
+                        for (let k = enemies.length - 1; k >= 0; k--) {
+                            const enemy = enemies[k];
+                            for (let j = enemy.cubes.length - 1; j >= 0; j--) {
+                                const c = enemy.cubes[j];
+                                const worldPos = c.position.clone().applyMatrix4(enemy.group.matrixWorld);
+                                if (worldPos.distanceTo(b.position) < 0.8) {
+                                    createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), 0xffffff, 0.3, 5, 'explosion'); // Hit flash
+                                    
+                                    // Interceptor does ZERO damage to ships (or minimal visual only)
+                                    if (b.userData.isInterceptor) {
+                                        hitEnemy = true; // Remove bullet
+                                        // Maybe just a spark
+                                        createParticle(worldPos, b.userData.vel.clone().multiplyScalar(-0.1), 0x00ffaa, 0.2, 5);
+                                        break; 
+                                    }
+
+                                    if (b.userData.isMissile) {
+                                        // Missile Logic: Large AOE but Half Damage
+                                        createExplosion(worldPos, 0xff00ff, 3.0); 
+                                        
+                                        const impactPos = worldPos.clone();
+                                        const radius = 6.0; // Large radius
+
+                                        // Iterate backwards
+                                        for (let m = enemy.cubes.length - 1; m >= 0; m--) {
+                                            const tCube = enemy.cubes[m];
+                                            const tPos = tCube.position.clone().applyMatrix4(enemy.group.matrixWorld);
+                                            
+                                            if (tPos.distanceTo(impactPos) < radius) {
+                                                // Half Damage
+                                                tCube.userData.hp = Math.floor(tCube.userData.hp / 2);
+                                                
+                                                createParticle(tPos, new THREE.Vector3(0,0,0), tCube.material.color.getHex(), 0.4, 20, 'smoke');
+
+                                                if (tCube.userData.hp <= 0) {
+                                                    createExplosion(tPos, tCube.material.color.getHex(), 0.8);
+                                                    enemy.group.remove(tCube);
+                                                    enemy.cubes.splice(m, 1);
+                                                    
+                                                    if (tCube.userData.type === 'core') {
+                                                        createExplosion(enemy.group.position, 0xffa500, 2.5);
+                                                        scene.remove(enemy.group);
+                                                        enemies.splice(k, 1);
+                                                        hitEnemy = true;
+                                                        break; 
+                                                    }
+                                                } else {
+                                                    const orig = tCube.material.color.getHex();
+                                                    tCube.material.color.setHex(0xffffff);
+                                                    setTimeout(()=>{ if(tCube.parent) tCube.material.color.setHex(orig); }, 50);
+                                                }
+                                            }
+                                        }
+                                        hitEnemy = true;
+                                        break;
+                                    } else {
+                                        if (c.userData.type === 'core') {
+                                            createExplosion(enemy.group.position, 0xffa500, 2.5); 
+                                            scene.remove(enemy.group);
+                                            enemies.splice(k, 1);
+                                            hitEnemy = true;
+                                            break;
+                                        }
+
+                                        c.userData.hp = (c.userData.hp || 1) - 1;
+                                        
+                                        if (c.userData.hp <= 0) {
+                                            let exScale = 0.8;
+                                            if (b.userData.isCannon) exScale = 4.0;
+
+                                            createExplosion(worldPos, c.material.color.getHex(), exScale); 
+
+                                            if (b.userData.isCannon) {
+                                                const impactPos = worldPos.clone();
+                                                const radius = 2.5; 
+                                                
+                                                for (let m = enemy.cubes.length - 1; m >= 0; m--) {
+                                                    const targetCube = enemy.cubes[m];
+                                                    if (targetCube === c) {
+                                                        enemy.group.remove(c);
+                                                        enemy.cubes.splice(m, 1);
+                                                        continue;
+                                                    }
+                                                    
+                                                    const tPos = targetCube.position.clone().applyMatrix4(enemy.group.matrixWorld);
+                                                    if (tPos.distanceTo(impactPos) <= radius) {
+                                                        createParticle(tPos, new THREE.Vector3(0,0,0), targetCube.material.color.getHex(), 0.5, 20, 'normal');
+                                                        enemy.group.remove(targetCube);
+                                                        enemy.cubes.splice(m, 1);
+                                                    }
+                                                }
+                                            } else {
+                                                enemy.group.remove(c);
+                                                enemy.cubes.splice(j, 1);
+                                            }
+                                        } else {
+                                            const orig = c.material.color.getHex();
+                                            c.material.color.setHex(0xffffff);
+                                            setTimeout(()=>{ if(c.parent) c.material.color.setHex(orig); }, 50);
+                                        }
+
+                                        hitEnemy = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (hitEnemy) break;
+                        }
                     }
                     if (hitEnemy) {
                         scene.remove(b);
                         bullets.splice(i, 1);
+                        // Fix for splice issue when removing bullet being iterated?
+                        // "i" is from outer loop: for (let i = bullets.length - 1; i >= 0; i--)
+                        // This splice removes 'b'. 
+                        // But if we ALSO removed an enemy bullet in the nested loop, we modified 'bullets'.
+                        // wait, "enemyBullet" is inside "bullets" array too.
+                        // If I remove enemyBullet (index k), and k > i, it's fine.
+                        // If k < i, then i shifts. 
+                        // But i is iterating backwards. k is also iterating backwards.
+                        // If I remove k, indices > k shift down.
+                        // If k > i, 'i' is unaffected.
+                        // If k < i, 'i' index now points to element i-1. Since we do i--, it skips one? No.
+                        // If I remove at k (where k < i), element at i becomes element at i-1.
+                        // Next loop i-- accesses i-1 (which is the old i). So we visit 'old i' again?
+                        // Let's trace. 
+                        // i=5 (current). k=2 (target). splice(2,1). Length decreases. index 5 becomes 4.
+                        // Next loop i=4. We process new 4 (which was old 5). We processed old 5 already!
+                        // So we process same bullet twice?
+                        // This could be problematic if logic is not idempotent.
+                        // Bullet logic is usually "move, check collision". If run twice in one frame, it moves twice? No, movement is already done. Collision is checked twice.
+                        // If we remove 'b' (at i) via splice(i,1), we continue.
+                        
+                        // To be safe, if we remove `enemyBullet`, we should probably adjust `i` if `k < i`.
+                        // But wait, `bullets` contains BOTH player and enemy bullets.
+                        // If I modify the array I'm iterating over (bullets), I need to be careful.
+                        
+                        // Simpler solution: Mark enemy bullet as dead (life=0) instead of splicing immediately inside nested loop.
+                        // Let the main loop handle removal.
                     }
                 } else {
                     let hit = false;
@@ -2276,11 +2379,102 @@ if ('serviceWorker' in navigator) {
         });
     }
 
+    function updateInterceptors() {
+        const state = weaponState.interceptor;
+        const stats = WEAPON_STATS.interceptor;
+        
+        // Cooldown/Reload management
+        if (state.cooldown > 0) state.cooldown--;
+        if (state.reloadTimer > 0) {
+            state.reloadTimer--;
+            if (state.reloadTimer <= 0) state.ammo = stats.maxAmmo;
+            return; // Reloading, cannot fire
+        }
+        if (state.ammo <= 0) {
+            state.reloadTimer = stats.reloadTime;
+            return;
+        }
+        if (state.cooldown > 0) return;
+
+        // Target acquisition
+        // Find nearest enemy missile within range
+        let target = null;
+        let minDist = 45; // Range
+        const myPos = robotGroup.position;
+
+        for (const b of bullets) {
+            if (!b.userData.isPlayer && b.userData.isMissile) {
+                const dist = b.position.distanceTo(myPos);
+                if (dist < minDist) {
+                    minDist = dist;
+                    target = b;
+                }
+            }
+        }
+
+        if (target) {
+            // Fire from all interceptors
+            let fired = false;
+            cubes.forEach(c => {
+                if (c.userData.subType === 'interceptor' && !c.userData.isDead) {
+                    // Fire logic
+                    const startPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld).add(new THREE.Vector3(0, 0.5, 0));
+                    
+                    // Simple lead calculation (predictive aim not strictly needed for this speed/dist, but helpful)
+                    // Interceptor speed ~3.5, Missile speed ~2.0
+                    // Just aim directly for now as they are fast
+                    const dir = target.position.clone().sub(startPos).normalize();
+                    
+                    // Create Bullet
+                    const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.15, 4, 4), new THREE.MeshBasicMaterial({ color: 0x00ffaa }));
+                    bullet.position.copy(startPos);
+                    bullet.userData = { 
+                        vel: dir.multiplyScalar(3.5), 
+                        life: 40, 
+                        isPlayer: true, 
+                        isInterceptor: true,
+                        damage: 0 
+                    };
+                    scene.add(bullet);
+                    bullets.push(bullet);
+                    
+                    // Visuals
+                    createParticle(startPos, dir.clone().multiplyScalar(0.2), 0x00ffaa, 0.2, 5);
+                    
+                    // Rotate dome to face target (visual only)
+                    const dome = c.children[0].children[1]; // Group -> Dome
+                    if (dome) {
+                        // This is local rotation, might be tricky. Skip complex IK for now.
+                    }
+                    fired = true;
+                }
+            });
+
+            if (fired) {
+                state.ammo--;
+                state.cooldown = stats.fireDelay;
+                if (state.ammo <= 0) state.reloadTimer = stats.reloadTime;
+            }
+        }
+    }
+
     function updateWeapons() {
-        const types = ['normal', 'triple', 'missile'];
+        const types = ['normal', 'triple', 'missile', 'interceptor'];
         types.forEach(type => {
             const state = weaponState[type];
             const stats = WEAPON_STATS[type];
+
+            // Interceptor logic handled separately in updateInterceptors, 
+            // but we keep generic update here for HUD consistency if needed later
+            // Actually, let's remove interceptor from here to avoid double decrement if we added logic there?
+            // No, updateInterceptors handles its own decrement. 
+            // BUT: reloadTimer and cooldown are decremented in updateWeapons for others.
+            // Let's exclude interceptor from this generic loop or ensure updateInterceptors handles EVERYTHING for it.
+            // I put full logic in updateInterceptors. So I should remove 'interceptor' from this list 
+            // OR remove logic from updateInterceptors and put it here.
+            // updateInterceptors is better as it needs target logic.
+            
+            if (type === 'interceptor') return; // Handled in updateInterceptors
 
             if (state.cooldown > 0) state.cooldown--;
             
