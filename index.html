@@ -278,7 +278,7 @@ if ('serviceWorker' in navigator) {
         // Bloom Setup
         const renderScene = new THREE.RenderPass(scene, camera);
         bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-        bloomPass.threshold = 0;
+        bloomPass.threshold = 0.5; // Only glow if color > 0.5
         bloomPass.strength = 1.5;
         bloomPass.radius = 0.4;
 
