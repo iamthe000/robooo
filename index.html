@@ -154,6 +154,12 @@ if ('serviceWorker' in navigator) {
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 
 <script>
     
@@ -238,10 +244,10 @@ if ('serviceWorker' in navigator) {
     let currentDifficulty = DIFFICULTY_SETTINGS.normal;
 
     const GRAPHICS_PROFILES = {
-        low: { particleMult: 0.3, lifeMult: 0.5, dustCount: 200, trailSkip: 3, explosionScale: 0.5 },
-        normal: { particleMult: 1.0, lifeMult: 1.0, dustCount: 1000, trailSkip: 1, explosionScale: 1.0 },
-        high: { particleMult: 2.0, lifeMult: 1.5, dustCount: 2500, trailSkip: 0, explosionScale: 1.5 },
-        pro: { particleMult: 5.0, lifeMult: 2.5, dustCount: 5000, trailSkip: 0, explosionScale: 2.5 }
+        low: { particleMult: 0.3, lifeMult: 0.5, dustCount: 200, trailSkip: 3, explosionScale: 0.5, bloom: false },
+        normal: { particleMult: 1.0, lifeMult: 1.0, dustCount: 1000, trailSkip: 1, explosionScale: 1.0, bloom: false },
+        high: { particleMult: 2.0, lifeMult: 1.2, dustCount: 2500, trailSkip: 0, explosionScale: 1.5, bloom: true, bloomStrength: 1.0, bloomRadius: 0.2 },
+        pro: { particleMult: 2.5, lifeMult: 1.5, dustCount: 3500, trailSkip: 0, explosionScale: 2.0, bloom: true, bloomStrength: 1.8, bloomRadius: 0.5 }
     };
     let currentGraphics = GRAPHICS_PROFILES.normal;
     let frameCount = 0;
@@ -249,6 +255,9 @@ if ('serviceWorker' in navigator) {
     // HUD Variables
     let sceneHUD, cameraHUD;
     let monitorGroup, monitorCubes = [];
+
+    // Post-processing
+    let composer, bloomPass;
     
     init();
     animate();
@@ -265,6 +274,17 @@ if ('serviceWorker' in navigator) {
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        // Bloom Setup
+        const renderScene = new THREE.RenderPass(scene, camera);
+        bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloomPass.threshold = 0;
+        bloomPass.strength = 1.5;
+        bloomPass.radius = 0.4;
+
+        composer = new THREE.EffectComposer(renderer);
+        composer.addPass(renderScene);
+        composer.addPass(bloomPass);
 
         controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
@@ -1129,11 +1149,11 @@ if ('serviceWorker' in navigator) {
         let emissive = 0x000000;
 
         if (type === 'armor') { color = 0x888888; }
-        if (type === 'engine') { color = 0xff3300; emissive = 0x330000; }
+        if (type === 'engine') { color = 0xff3300; emissive = 0xff4400; }
         if (type === 'turret') { color = 0xffd700; emissive = 0x332200; }
         if (type === 'triple') { color = 0xffaa00; emissive = 0x332200; }
         if (type === 'cannon') { color = 0x444444; }
-        if (type === 'interceptor') { color = 0x00ffaa; emissive = 0x003311; }
+        if (type === 'interceptor') { color = 0x00ffaa; emissive = 0x00ffaa; }
         
         if (colorOverride !== null && colorOverride !== undefined) {
             color = colorOverride;
@@ -1995,7 +2015,15 @@ if ('serviceWorker' in navigator) {
         
         // 1. Main Scene
         renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
-        renderer.render(scene, camera);
+        
+        if (isBattleMode && currentGraphics.bloom && composer) {
+            // Update bloom settings dynamically
+            bloomPass.strength = currentGraphics.bloomStrength || 1.5;
+            bloomPass.radius = currentGraphics.bloomRadius || 0.4;
+            composer.render();
+        } else {
+            renderer.render(scene, camera);
+        }
 
         // 2. HUD (Battle Mode only)
         if (isBattleMode) {
@@ -2282,7 +2310,16 @@ if ('serviceWorker' in navigator) {
     }
     
     function createParticle(pos, dir, color=0xffaa00, size=0.2, life=20, type='normal') {
-        const elm = new THREE.Mesh(PARTICLE_GEOMETRY, new THREE.MeshBasicMaterial({color:color, transparent:true, opacity:0.8}));
+        let material;
+        if (type === 'normal') {
+            // Bright unlit material for bloom (sparks, debris)
+            material = new THREE.MeshBasicMaterial({color:color, transparent:true, opacity:1.0});
+        } else {
+            // Standard particles (smoke)
+            material = new THREE.MeshBasicMaterial({color:color, transparent:true, opacity:0.8});
+        }
+        
+        const elm = new THREE.Mesh(PARTICLE_GEOMETRY, material);
         elm.position.copy(pos);
         elm.scale.set(size, size, size);
         
@@ -2324,6 +2361,7 @@ if ('serviceWorker' in navigator) {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
+        if(composer) composer.setSize(window.innerWidth, window.innerHeight);
     }
 
     function getEnemyLayout(type) {
@@ -2378,8 +2416,8 @@ if ('serviceWorker' in navigator) {
             let color = 0xff0000; 
             let emissive = 0x330000;
 
-            if (b.type === 'core') { color = 0x00ff00; emissive = 0x003300; }
-            if (b.type === 'engine') { color = 0xff3300; emissive = 0x330000; }
+            if (b.type === 'core') { color = 0x00ff00; emissive = 0x00ff00; }
+            if (b.type === 'engine') { color = 0xff3300; emissive = 0xff4400; }
             if (b.type === 'turret') { color = 0xffd700; emissive = 0x332200; }
             if (b.type === 'armor') { color = 0x888888; emissive = 0x000000; }
             if (b.type === 'missile') { color = 0x444444; emissive = 0x000000; }
