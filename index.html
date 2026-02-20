@@ -85,10 +85,16 @@ if ('serviceWorker' in navigator) {
             <button id="view-btn" class="btn" style="position:relative;">VIEW</button>
             <input type="file" id="file-input" accept=".json,.svrobot,application/json,application/octet-stream">
         </div>
-    <select id="difficulty-select" class="btn" style="position:relative; right:140px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.5); color: white; padding: 4px 8px; border-radius: 20px; font-weight: bold; font-size: 12px;">
+    <select id="difficulty-select" class="btn" style="position:relative; right:50px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.5); color: white; padding: 4px 8px; border-radius: 20px; font-weight: bold; font-size: 12px;">
         <option value="easy">EASY</option>
         <option value="normal" selected>NORMAL</option>
         <option value="hard">HARD</option>
+    </select>
+    <select id="graphics-select" class="btn" style="position:relative; right:40px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.5); color: white; padding: 4px 8px; border-radius: 20px; font-weight: bold; font-size: 12px;">
+        <option value="low">LOW</option>
+        <option value="normal" selected>NORMAL</option>
+        <option value="high">HIGH</option>
+        <option value="pro">PRO</option>
     </select>
         <button id="mode-btn" class="btn" style="position:relative;">BATTLE START</button>
     </div>
@@ -231,6 +237,15 @@ if ('serviceWorker' in navigator) {
 
     let currentDifficulty = DIFFICULTY_SETTINGS.normal;
 
+    const GRAPHICS_PROFILES = {
+        low: { particleMult: 0.3, lifeMult: 0.5, dustCount: 200, trailSkip: 3, explosionScale: 0.5 },
+        normal: { particleMult: 1.0, lifeMult: 1.0, dustCount: 1000, trailSkip: 1, explosionScale: 1.0 },
+        high: { particleMult: 2.0, lifeMult: 1.5, dustCount: 2500, trailSkip: 0, explosionScale: 1.5 },
+        pro: { particleMult: 5.0, lifeMult: 2.5, dustCount: 5000, trailSkip: 0, explosionScale: 2.5 }
+    };
+    let currentGraphics = GRAPHICS_PROFILES.normal;
+    let frameCount = 0;
+
     // HUD Variables
     let sceneHUD, cameraHUD;
     let monitorGroup, monitorCubes = [];
@@ -299,6 +314,11 @@ if ('serviceWorker' in navigator) {
 
         window.addEventListener('keydown', e => keys[e.code] = true);
         window.addEventListener('keyup', e => keys[e.code] = false);
+
+        document.getElementById('graphics-select').addEventListener('change', (e) => {
+            currentGraphics = GRAPHICS_PROFILES[e.target.value] || GRAPHICS_PROFILES.normal;
+            createSpaceDust();
+        });
 
         document.getElementById('mode-btn').addEventListener('click', toggleMode);
         document.getElementById('save-btn').addEventListener('click', saveRobot);
@@ -474,8 +494,13 @@ if ('serviceWorker' in navigator) {
     }
 
     function createSpaceDust() {
+        if (dust) {
+            scene.remove(dust);
+            dust.geometry.dispose();
+            dust.material.dispose();
+        }
         const dustGeo = new THREE.BufferGeometry();
-        const dustCount = 1000;
+        const dustCount = currentGraphics.dustCount;
         const dustPos = new Float32Array(dustCount * 3);
         
         for(let i=0; i<dustCount*3; i+=3) {
@@ -1006,6 +1031,7 @@ if ('serviceWorker' in navigator) {
         const paletteContainer = document.getElementById('palette-container');
         const saveLoadBtns = document.querySelectorAll('#save-btn, #load-btn, #view-btn');
         const diffSelect = document.getElementById('difficulty-select');
+        const graphicsSelect = document.getElementById('graphics-select');
         const crosshair = document.getElementById('crosshair');
 
         if (isBattleMode) {
@@ -1018,6 +1044,7 @@ if ('serviceWorker' in navigator) {
             paletteContainer.style.display = 'none';
             saveLoadBtns.forEach(b => b.style.display = 'none'); 
             diffSelect.style.display = 'none';
+            graphicsSelect.style.display = 'none';
             crosshair.style.opacity = 1;
 
             scene.background = new THREE.Color(0x000000);
@@ -1047,6 +1074,7 @@ if ('serviceWorker' in navigator) {
             paletteContainer.style.display = 'flex';
             saveLoadBtns.forEach(b => b.style.display = 'block');
             diffSelect.style.display = 'block';
+            graphicsSelect.style.display = 'block';
             crosshair.style.opacity = 0;
 
             scene.background = new THREE.Color(0x222428);
@@ -1440,6 +1468,7 @@ if ('serviceWorker' in navigator) {
 
     function animate() {
         requestAnimationFrame(animate);
+        frameCount++;
         
         if (!isBattleMode && controls) controls.update();
 
@@ -1523,14 +1552,16 @@ if ('serviceWorker' in navigator) {
                         const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
                         const exhaustDir = forceDir.clone().negate();
 
-                        // Jet flame
-                        if(Math.random()>0.1) {
-                             createParticle(worldPos, exhaustDir.clone().multiplyScalar(0.8), 0x00ffff, 0.3, 10, 'normal');
-                        }
-                        
-                        // Smoke
-                        if(Math.random()>0.7) {
-                             createParticle(worldPos, exhaustDir.clone().multiplyScalar(0.2), 0x555555, 0.5, 50, 'smoke');
+                        if (frameCount % (currentGraphics.trailSkip + 1) === 0) {
+                            // Jet flame
+                            if(Math.random()>0.1) {
+                                createParticle(worldPos, exhaustDir.clone().multiplyScalar(0.8), 0x00ffff, 0.3, 10, 'normal');
+                            }
+                            
+                            // Smoke
+                            if(Math.random()>0.7) {
+                                createParticle(worldPos, exhaustDir.clone().multiplyScalar(0.2), 0x555555, 0.5, 50, 'smoke');
+                            }
                         }
                     }
                 });
@@ -1677,7 +1708,9 @@ if ('serviceWorker' in navigator) {
                     }
                     
                     // Smoke Trail - cleaner
-                    createParticle(b.position, new THREE.Vector3(0,0,0), 0xaaaaaa, 0.2, 40, 'smoke');
+                    if (frameCount % (currentGraphics.trailSkip + 1) === 0) {
+                        createParticle(b.position, new THREE.Vector3(0,0,0), 0xaaaaaa, 0.2, 40, 'smoke');
+                    }
                 }
 
                 b.position.add(b.userData.vel);
@@ -1941,10 +1974,12 @@ if ('serviceWorker' in navigator) {
                     }
                 } else if (c.userData.hp < c.userData.maxHp) {
                     const damageRatio = 1.0 - (c.userData.hp / c.userData.maxHp);
-                    if(Math.random() < damageRatio * 0.1) {
-                         const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
-                         const smokeDir = new THREE.Vector3(Math.random()-0.5, Math.random()*0.5 + 0.2, Math.random()-0.5).normalize().multiplyScalar(0.05);
-                         createParticle(worldPos, smokeDir, 0x222222, 0.6, 90, 'smoke');
+                    if (frameCount % (currentGraphics.trailSkip + 1) === 0) {
+                        if(Math.random() < damageRatio * 0.1) {
+                             const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
+                             const smokeDir = new THREE.Vector3(Math.random()-0.5, Math.random()*0.5 + 0.2, Math.random()-0.5).normalize().multiplyScalar(0.05);
+                             createParticle(worldPos, smokeDir, 0x222222, 0.6, 90, 'smoke');
+                        }
                     }
                 }
             });
@@ -2250,27 +2285,30 @@ if ('serviceWorker' in navigator) {
         if(type === 'explosion') spreadVal = 0.5;
 
         const spread = new THREE.Vector3((Math.random()-0.5)*spreadVal, (Math.random()-0.5)*spreadVal, (Math.random()-0.5)*spreadVal);
-        elm.userData = { vel: dir.clone().add(spread), life: life, maxLife:life, type: type };
+        const adjustedLife = life * currentGraphics.lifeMult;
+        elm.userData = { vel: dir.clone().add(spread), life: adjustedLife, maxLife:adjustedLife, type: type };
         scene.add(elm);
         particles.push(elm);
     }
 
     function createExplosion(pos, color, scale = 1.0) {
+        const gScale = currentGraphics.explosionScale;
+        
         // Flash
-        createParticle(pos, new THREE.Vector3(0,0,0), 0xffffff, 2.0 * scale, 5, 'explosion');
+        createParticle(pos, new THREE.Vector3(0,0,0), 0xffffff, 2.0 * scale * gScale, 5, 'explosion');
         
         // Debris
-        const debrisCount = Math.floor(15 * scale);
+        const debrisCount = Math.floor(15 * scale * currentGraphics.particleMult);
         for(let i=0; i<debrisCount; i++) {
              const dir = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(0.4 * scale);
-             createParticle(pos, dir, color, 0.3 * scale, 40, 'normal');
+             createParticle(pos, dir, color, 0.3 * scale * gScale, 40, 'normal');
         }
 
         // Smoke
-        const smokeCount = Math.floor(8 * scale);
+        const smokeCount = Math.floor(8 * scale * currentGraphics.particleMult);
         for(let i=0; i<smokeCount; i++) {
              const dir = new THREE.Vector3(Math.random()-0.5, Math.random()*0.5, Math.random()-0.5).normalize().multiplyScalar(0.15 * scale);
-             createParticle(pos, dir, 0x555555, 0.8 * scale, 70, 'smoke');
+             createParticle(pos, dir, 0x555555, 0.8 * scale * gScale, 70, 'smoke');
         }
 
         shakeIntensity += 0.2 * scale;
