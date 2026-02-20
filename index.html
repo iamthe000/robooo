@@ -592,6 +592,7 @@ if ('serviceWorker' in navigator) {
     }
 
     const BLOCK_TYPES = ['normal', 'armor', 'engine', 'turret', 'triple', 'missile', 'cannon', 'interceptor', 'core'];
+    const PARTICLE_GEOMETRY = new THREE.BoxGeometry(1, 1, 1);
     const DIR_VECTORS = [
         {id: 0, x: 0, y: 1, z: 0}, // UP
         {id: 1, x: 0, y: -1, z: 0}, // DOWN
@@ -1955,7 +1956,11 @@ if ('serviceWorker' in navigator) {
                     p.material.opacity = p.userData.life / p.userData.maxLife;
                 }
 
-                if(p.userData.life <= 0){ scene.remove(p); particles.splice(i,1); }
+                if(p.userData.life <= 0){ 
+                    scene.remove(p); 
+                    p.material.dispose();
+                    particles.splice(i,1); 
+                }
             });
             
             cubes.forEach(c => {
@@ -2277,8 +2282,9 @@ if ('serviceWorker' in navigator) {
     }
     
     function createParticle(pos, dir, color=0xffaa00, size=0.2, life=20, type='normal') {
-        const elm = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), new THREE.MeshBasicMaterial({color:color, transparent:true, opacity:0.8}));
+        const elm = new THREE.Mesh(PARTICLE_GEOMETRY, new THREE.MeshBasicMaterial({color:color, transparent:true, opacity:0.8}));
         elm.position.copy(pos);
+        elm.scale.set(size, size, size);
         
         let spreadVal = 0.2;
         if(type === 'smoke') spreadVal = 0.1;
