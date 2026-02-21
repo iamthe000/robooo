@@ -338,6 +338,7 @@ if ('serviceWorker' in navigator) {
     }
 
     function removeEnemyBlock(enemy, index) {
+        if (index < 0 || index >= enemy.cubes.length) return;
         const c = enemy.cubes[index];
         if(!c) return;
         const key = `${Math.round(c.position.x)},${Math.round(c.position.y)},${Math.round(c.position.z)}`;
@@ -1629,12 +1630,17 @@ if ('serviceWorker' in navigator) {
         requestAnimationFrame(animate);
         frameCount++;
         
-        if (!isBattleMode && controls) controls.update();
+        try {
+            if (!isBattleMode && controls) controls.update();
 
-        if (isBattleMode) {
-            updateGamepad();
-            updateWeapons();
-            updateMonitor();
+            if (isBattleMode) {
+                // Pre-calc Inverse Matrices for Collision Optimization
+                const playerInvMat = robotGroup.matrixWorld.clone().invert();
+                enemies.forEach(e => e.invMat = e.group.matrixWorld.clone().invert());
+
+                updateGamepad();
+                updateWeapons();
+                updateMonitor();
 
             // Cannon Input Logic
             if (cannonInput.isHolding && !cannonInput.volleyActive) {
@@ -2191,6 +2197,9 @@ if ('serviceWorker' in navigator) {
             renderer.render(sceneHUD, cameraHUD);
             
             renderer.setScissorTest(false);
+        }
+        } catch(e) {
+            console.error("Animate Error:", e);
         }
     }
 
