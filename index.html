@@ -2790,10 +2790,14 @@ if ('serviceWorker' in navigator) {
                     const fireDir = c.userData.fireDir.clone().applyQuaternion(robotGroup.quaternion).normalize();
                     const p1 = muzzlePos;
                     const p2 = muzzlePos.clone().add(fireDir.clone().multiplyScalar(150)); // Range
-                    const radius = 2.5 * w; 
+                    const radius = 6.0 * w; 
 
-                    enemies.forEach(e => {
-                        e.cubes.forEach(ec => {
+                    for (let i = enemies.length - 1; i >= 0; i--) {
+                        const e = enemies[i];
+                        let enemyDestroyed = false;
+
+                        for (let j = e.cubes.length - 1; j >= 0; j--) {
+                            const ec = e.cubes[j];
                             const ePos = ec.position.clone().applyMatrix4(e.group.matrixWorld);
                             
                             // Dist to line
@@ -2810,11 +2814,22 @@ if ('serviceWorker' in navigator) {
                                 ec.userData.hp -= 20; // Massive damage
                                 if (ec.userData.hp <= 0) {
                                     createExplosion(ePos, ec.material.color.getHex(), 1.5);
-                                    // Let main loop handle removal
+                                    
+                                    e.group.remove(ec);
+                                    e.cubes.splice(j, 1);
+
+                                    if (ec.userData.type === 'core') {
+                                        createExplosion(e.group.position, 0xffa500, 2.5);
+                                        scene.remove(e.group);
+                                        enemies.splice(i, 1);
+                                        enemyDestroyed = true;
+                                        break; 
+                                    }
                                 }
                             }
-                        });
-                    });
+                        }
+                        if (enemyDestroyed) continue;
+                    }
                 }
 
                 if (bState.timer >= stats.duration) {
