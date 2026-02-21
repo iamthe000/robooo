@@ -172,6 +172,8 @@ if ('serviceWorker' in navigator) {
     let ghostMesh;
     let robotGroup; 
     let cubes = []; 
+    let blockMap = new Map(); // Optimization: Key "x,y,z" -> Mesh
+    let instancedMesh;
     let raycaster, mouse;
     let isBattleMode = false;
     let isViewMode = false;
@@ -269,6 +271,80 @@ if ('serviceWorker' in navigator) {
     
     init();
     animate();
+
+    function optimizeForBattle() {
+        const candidates = cubes.filter(c => 
+            !c.userData.isDead && 
+            (c.userData.type === 'normal' || c.userData.type === 'armor')
+        );
+        
+        if (candidates.length === 0) return;
+        
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshStandardMaterial({ 
+            roughness: 0.3, metalness: 0.5
+        });
+        
+        instancedMesh = new THREE.InstancedMesh(geometry, material, candidates.length);
+        instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); 
+        
+        const dummy = new THREE.Object3D();
+        const color = new THREE.Color();
+        
+        candidates.forEach((c, i) => {
+            dummy.position.copy(c.position);
+            dummy.quaternion.copy(c.quaternion);
+            dummy.scale.set(1, 1, 1);
+            dummy.updateMatrix();
+            
+            instancedMesh.setMatrixAt(i, dummy.matrix);
+            instancedMesh.setColorAt(i, color.setHex(c.userData.origColor));
+            
+            c.visible = false;
+            c.userData.instanceId = i;
+            c.userData.isInstanced = true;
+        });
+        
+        instancedMesh.instanceMatrix.needsUpdate = true;
+        instancedMesh.instanceColor.needsUpdate = true;
+        
+        robotGroup.add(instancedMesh);
+    }
+
+    function cleanupBattleOptimization() {
+        if (instancedMesh) {
+            robotGroup.remove(instancedMesh);
+            instancedMesh.dispose();
+            instancedMesh = null;
+        }
+        
+        cubes.forEach(c => {
+            c.visible = !c.userData.isDead; 
+            c.userData.isInstanced = false;
+            delete c.userData.instanceId;
+        });
+    }
+
+    function deinstanceBlock(c) {
+        if (c.userData.isInstanced && instancedMesh) {
+            const i = c.userData.instanceId;
+            const mat = new THREE.Matrix4().makeScale(0, 0, 0); 
+            instancedMesh.setMatrixAt(i, mat);
+            instancedMesh.instanceMatrix.needsUpdate = true;
+            
+            c.userData.isInstanced = false;
+            c.visible = true;
+        }
+    }
+
+    function removeEnemyBlock(enemy, index) {
+        const c = enemy.cubes[index];
+        if(!c) return;
+        const key = `${Math.round(c.position.x)},${Math.round(c.position.y)},${Math.round(c.position.z)}`;
+        enemy.blockMap.delete(key);
+        enemy.group.remove(c);
+        enemy.cubes.splice(index, 1);
+    }
 
     function init() {
         scene = new THREE.Scene();
@@ -1095,8 +1171,10 @@ if ('serviceWorker' in navigator) {
             spawnEnemy(-15, -5, -50);
             
             createMonitorShip();
+            optimizeForBattle();
             if(controls) controls.enabled = false;
         } else {
+            cleanupBattleOptimization();
             modeBtn.innerText = "BATTLE START";
             modeBtn.style.borderColor = "#00ccff";
             modeBtn.style.color = "#00ccff";
@@ -1150,8 +1228,13 @@ if ('serviceWorker' in navigator) {
 
     function addCube(x, y, z, type, direction, colorOverride = null) {
         
-        const exists = cubes.some(c => Math.abs(c.position.x - x) < 0.1 && Math.abs(c.position.y - y) < 0.1 && Math.abs(c.position.z - z) < 0.1);
-        if(exists) return;
+        // Round to ensure integer keys for Map lookup
+        const ix = Math.round(x);
+        const iy = Math.round(y);
+        const iz = Math.round(z);
+        const key = `${ix},${iy},${iz}`;
+
+        if(blockMap.has(key)) return;
 
         const geometry = new THREE.BoxGeometry(1, 1, 1);
         let color = 0x00ccff;
@@ -1400,6 +1483,7 @@ if ('serviceWorker' in navigator) {
 
         robotGroup.add(cube);
         cubes.push(cube);
+        blockMap.set(key, cube);
     }
 
     let isDragging = false;
@@ -1477,6 +1561,9 @@ if ('serviceWorker' in navigator) {
             if (isDelete) {
                 if (obj.position.lengthSq() < 0.1) return;
                 
+                const key = `${Math.round(obj.position.x)},${Math.round(obj.position.y)},${Math.round(obj.position.z)}`;
+                blockMap.delete(key);
+
                 robotGroup.remove(obj);
                 cubes = cubes.filter(c => c !== obj);
                 updateGhostCursor(e);
@@ -1827,46 +1914,49 @@ if ('serviceWorker' in navigator) {
                     if (!hitEnemy) {
                         for (let k = enemies.length - 1; k >= 0; k--) {
                             const enemy = enemies[k];
-                            for (let j = enemy.cubes.length - 1; j >= 0; j--) {
-                                const c = enemy.cubes[j];
-                                const worldPos = c.position.clone().applyMatrix4(enemy.group.matrixWorld);
-                                if (worldPos.distanceTo(b.position) < 0.8) {
+                            
+                            // Optimization: Check bounding sphere roughly
+                            if (enemy.group.position.distanceTo(b.position) > 30) continue;
+
+                            // Optimization: Spatial lookup
+                            const localPos = b.position.clone().applyMatrix4(enemy.invMat);
+                            const lx = Math.round(localPos.x);
+                            const ly = Math.round(localPos.y);
+                            const lz = Math.round(localPos.z);
+                            const key = `${lx},${ly},${lz}`;
+                            
+                            if (enemy.blockMap.has(key)) {
+                                const c = enemy.blockMap.get(key);
+                                // Collision Check
+                                if (localPos.distanceTo(c.position) < 0.8) {
+                                    const worldPos = c.position.clone().applyMatrix4(enemy.group.matrixWorld);
                                     createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), 0xffffff, 0.3, 5, 'explosion'); // Hit flash
                                     
-                                    // Interceptor does ZERO damage to ships (or minimal visual only)
+                                    // Interceptor does ZERO damage
                                     if (b.userData.isInterceptor) {
-                                        hitEnemy = true; // Remove bullet
-                                        // Maybe just a spark
+                                        hitEnemy = true; 
                                         createParticle(worldPos, b.userData.vel.clone().multiplyScalar(-0.1), 0x00ffaa, 0.2, 5);
                                         break; 
                                     }
 
                                     if (b.userData.isMissile) {
-                                        // Missile Logic: Large AOE but Half Damage
+                                        // Missile AOE Logic
                                         createExplosion(worldPos, 0xff00ff, 3.0); 
-                                        
                                         const impactPos = worldPos.clone();
-                                        const radius = 6.0; // Large radius
+                                        const radius = 6.0;
 
-                                        // Iterate backwards
                                         for (let m = enemy.cubes.length - 1; m >= 0; m--) {
                                             const tCube = enemy.cubes[m];
                                             const tPos = tCube.position.clone().applyMatrix4(enemy.group.matrixWorld);
-                                            
                                             if (tPos.distanceTo(impactPos) < radius) {
-                                                // Reduced Damage (Retain 75% -> 25% damage)
-                                                // Ensure hp is defined (default to 1)
                                                 const currentHp = (tCube.userData.hp !== undefined) ? tCube.userData.hp : 1;
                                                 tCube.userData.hp = Math.floor(currentHp * 0.75);
-                                                
                                                 createParticle(tPos, new THREE.Vector3(0,0,0), tCube.material.color.getHex(), 0.4, 20, 'smoke');
-
                                                 if (tCube.userData.hp <= 0) {
                                                     createExplosion(tPos, tCube.material.color.getHex(), 0.8);
-                                                    enemy.group.remove(tCube);
-                                                    enemy.cubes.splice(m, 1);
-                                                    
-                                                    if (tCube.userData.type === 'core') {
+                                                    const isCore = (tCube.userData.type === 'core');
+                                                    removeEnemyBlock(enemy, m);
+                                                    if (isCore) {
                                                         createExplosion(enemy.group.position, 0xffa500, 2.5);
                                                         scene.remove(enemy.group);
                                                         enemies.splice(k, 1);
@@ -1883,6 +1973,7 @@ if ('serviceWorker' in navigator) {
                                         hitEnemy = true;
                                         break;
                                     } else {
+                                        // Standard Bullet / Cannon Direct Hit
                                         if (c.userData.type === 'core') {
                                             createExplosion(enemy.group.position, 0xffa500, 2.5); 
                                             scene.remove(enemy.group);
@@ -1896,44 +1987,36 @@ if ('serviceWorker' in navigator) {
                                         if (c.userData.hp <= 0) {
                                             let exScale = 0.8;
                                             if (b.userData.isCannon) exScale = 4.0;
-
                                             createExplosion(worldPos, c.material.color.getHex(), exScale); 
 
                                             if (b.userData.isCannon) {
                                                 const impactPos = worldPos.clone();
                                                 const radius = 2.5; 
-                                                
+                                                const targetIndex = enemy.cubes.indexOf(c);
+                                                if(targetIndex !== -1) removeEnemyBlock(enemy, targetIndex);
+
                                                 for (let m = enemy.cubes.length - 1; m >= 0; m--) {
                                                     const targetCube = enemy.cubes[m];
-                                                    if (targetCube === c) {
-                                                        enemy.group.remove(c);
-                                                        enemy.cubes.splice(m, 1);
-                                                        continue;
-                                                    }
-                                                    
                                                     const tPos = targetCube.position.clone().applyMatrix4(enemy.group.matrixWorld);
                                                     if (tPos.distanceTo(impactPos) <= radius) {
                                                         createParticle(tPos, new THREE.Vector3(0,0,0), targetCube.material.color.getHex(), 0.5, 20, 'normal');
-                                                        enemy.group.remove(targetCube);
-                                                        enemy.cubes.splice(m, 1);
+                                                        removeEnemyBlock(enemy, m);
                                                     }
                                                 }
                                             } else {
-                                                enemy.group.remove(c);
-                                                enemy.cubes.splice(j, 1);
+                                                const targetIndex = enemy.cubes.indexOf(c);
+                                                if(targetIndex !== -1) removeEnemyBlock(enemy, targetIndex);
                                             }
                                         } else {
                                             const orig = c.material.color.getHex();
                                             c.material.color.setHex(0xffffff);
                                             setTimeout(()=>{ if(c.parent) c.material.color.setHex(orig); }, 50);
                                         }
-
                                         hitEnemy = true;
                                         break;
                                     }
                                 }
                             }
-                            if (hitEnemy) break;
                         }
                     }
                     if (hitEnemy) {
@@ -1969,40 +2052,49 @@ if ('serviceWorker' in navigator) {
                     }
                 } else {
                     let hit = false;
-                    for (let j = cubes.length - 1; j >= 0; j--) {
-                        const c = cubes[j];
-                        if (c.userData.isDead) continue; 
-                        
-                        const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
-                        if (worldPos.distanceTo(b.position) < 0.8) {
-                            createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), 0xffffff, 0.3, 5, 'explosion'); // Hit Flash
-                            
-                            if (c.position.lengthSq() < 0.1) { 
-                                playerHP -= 10;
-                                document.getElementById('hp-display').innerText = "HP: " + playerHP;
-                                shakeIntensity += 0.4;
-                                if (playerHP <= 0) {
-                                    createExplosion(robotGroup.position, 0x00ff00, 3.0);
-                                    alert("GAME OVER");
-                                    toggleMode();
-                                    return;
-                                }
-                            } else {
-                                c.userData.hp -= 1;
-                                if (c.userData.hp <= 0) {
-                                    createExplosion(worldPos, c.material.color.getHex(), 0.8);
-                                    c.visible = false;
-                                    c.userData.isDead = true;
-                                    c.userData.respawnTimer = 300; 
+                    
+                    // Optimization: Spatial Lookup for Player
+                    const localPos = b.position.clone().applyMatrix4(playerInvMat);
+                    const lx = Math.round(localPos.x);
+                    const ly = Math.round(localPos.y);
+                    const lz = Math.round(localPos.z);
+                    const key = `${lx},${ly},${lz}`;
+
+                    if (blockMap.has(key)) {
+                        const c = blockMap.get(key);
+                        if (!c.userData.isDead) {
+                             if (localPos.distanceTo(c.position) < 0.8) {
+                                deinstanceBlock(c);
+                                const worldPos = c.position.clone().applyMatrix4(robotGroup.matrixWorld);
+                                createParticle(worldPos, b.userData.vel.clone().multiplyScalar(0.2), 0xffffff, 0.3, 5, 'explosion'); // Hit Flash
+                                
+                                if (c.position.lengthSq() < 0.1) { 
+                                    playerHP -= 10;
+                                    document.getElementById('hp-display').innerText = "HP: " + playerHP;
+                                    shakeIntensity += 0.4;
+                                    if (playerHP <= 0) {
+                                        createExplosion(robotGroup.position, 0x00ff00, 3.0);
+                                        alert("GAME OVER");
+                                        toggleMode();
+                                        return;
+                                    }
                                 } else {
-                                    c.material.color.setHex(0xffffff);
-                                    setTimeout(() => { if(!c.userData.isDead) c.material.color.setHex(c.userData.origColor); }, 100);
+                                    c.userData.hp -= 1;
+                                    if (c.userData.hp <= 0) {
+                                        createExplosion(worldPos, c.material.color.getHex(), 0.8);
+                                        c.visible = false;
+                                        c.userData.isDead = true;
+                                        c.userData.respawnTimer = 300; 
+                                    } else {
+                                        c.material.color.setHex(0xffffff);
+                                        setTimeout(() => { if(!c.userData.isDead) c.material.color.setHex(c.userData.origColor); }, 100);
+                                    }
                                 }
-                            }
-                            hit = true;
-                            break;
+                                hit = true;
+                             }
                         }
                     }
+
                     if (hit) {
                         scene.remove(b);
                         bullets.splice(i, 1);
@@ -2565,10 +2657,17 @@ if ('serviceWorker' in navigator) {
             group.add(cube);
             cubesArr.push(cube);
         });
+
+        const eMap = new Map();
+        cubesArr.forEach(c => {
+             const key = `${Math.round(c.position.x)},${Math.round(c.position.y)},${Math.round(c.position.z)}`;
+             eMap.set(key, c);
+        });
         
         enemies.push({ 
             group: group, 
-            cubes: cubesArr, 
+            cubes: cubesArr,
+            blockMap: eMap, 
             fireTimer: Math.random() * 100,
             fireInterval: currentDifficulty.fireInterval 
         });
@@ -2815,8 +2914,7 @@ if ('serviceWorker' in navigator) {
                                 if (ec.userData.hp <= 0) {
                                     createExplosion(ePos, ec.material.color.getHex(), 1.5);
                                     
-                                    e.group.remove(ec);
-                                    e.cubes.splice(j, 1);
+                                    removeEnemyBlock(e, j);
 
                                     if (ec.userData.type === 'core') {
                                         createExplosion(e.group.position, 0xffa500, 2.5);
