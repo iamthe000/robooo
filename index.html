@@ -38,6 +38,7 @@
         #p-triple { background: #ffaa00; }
         #p-missile { background: #9933ff; }
         #p-cannon { background: #444; border: 1px solid #aaaaaa; color: #fff; }
+        #p-wave { background: #004444; border: 1px solid #00ffff; color: #00ffff; font-weight: bold; box-shadow: 0 0 5px #00ffff; }
         #p-delete { background: #333; border-color: #ff0000; color: #ff0000; font-weight: bold; } 
         
         #build-msg { text-align: center; font-size: 12px; opacity: 0.8; text-shadow: 1px 1px 2px black; margin-bottom: 5px; }
@@ -52,6 +53,8 @@
         #triple-btn { position: absolute; bottom: 140px; right: 130px; width: 60px; height: 60px; border-radius: 50%; background: rgba(255, 170, 0, 0.2); border: 2px solid #ffaa00; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; pointer-events: auto; color: #ffaa00; box-shadow: 0 0 10px #ffaa00; }
         #missile-btn { position: absolute; bottom: 230px; right: 50px; width: 60px; height: 60px; border-radius: 50%; background: rgba(153, 51, 255, 0.2); border: 2px solid #9933ff; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; pointer-events: auto; color: #9933ff; box-shadow: 0 0 10px #9933ff; }
         
+        #wave-btn { position: absolute; bottom: 320px; right: 50px; width: 60px; height: 60px; border-radius: 50%; background: rgba(0, 255, 255, 0.2); border: 2px solid #00ffff; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; pointer-events: auto; color: #00ffff; box-shadow: 0 0 15px #00ffff; }
+
         #cannon-btn { position: absolute; bottom: 230px; right: 130px; width: 60px; height: 60px; border-radius: 50%; background: rgba(50, 50, 50, 0.4); border: 2px solid #aaaaaa; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; pointer-events: auto; color: #aaaaaa; box-shadow: 0 0 10px #aaaaaa; }
         #cannon-gauge { display: flex; gap: 2px; margin-top: 4px; width: 40px; height: 6px; }
         #cannon-gauge div { flex: 1; background: #00ff00; height: 100%; border-radius: 2px; transition: width 0.1s, background 0.1s; }
@@ -126,6 +129,7 @@ if ('serviceWorker' in navigator) {
             <div id="p-missile" class="palette-item" onclick="selectBlock('missile')">MISSILE</div>
             <div id="p-cannon" class="palette-item" onclick="selectBlock('cannon')">CANNON</div>
             <div id="p-interceptor" class="palette-item" style="background: #334433; border-color: #00ffaa; color: #00ffaa;" onclick="selectBlock('interceptor')">INTCPT</div>
+            <div id="p-wave" class="palette-item" onclick="selectBlock('wave')">WAVE</div>
             <div id="p-delete" class="palette-item" onclick="selectBlock('delete')">DEL</div>
         </div>
     </div>
@@ -140,6 +144,7 @@ if ('serviceWorker' in navigator) {
         <div id="normal-btn" class="btn">NORMAL</div>
         <div id="triple-btn" class="btn">TRIPLE</div>
         <div id="missile-btn" class="btn">MISSILE</div>
+        <div id="wave-btn" class="btn">WAVE</div>
         <div id="cannon-btn" class="btn">SOLID
             <div id="cannon-gauge">
                 <div id="c-gauge-1"></div>
@@ -202,7 +207,8 @@ if ('serviceWorker' in navigator) {
         triple: { fireDelay: 5, maxAmmo: 25, reloadTime: 90 },    // Fast fire, smaller mag (frequent reload)
         missile: { fireDelay: 30, maxAmmo: 1, reloadTime: 1 }, // Reload is per-block
         cannon: { fireDelay: 20, maxAmmo: 3, reloadTime: 300 }, // Long reload, limited ammo
-        interceptor: { fireDelay: 4, maxAmmo: 25, reloadTime: 90 } // Fast fire, same ammo as triple
+        interceptor: { fireDelay: 4, maxAmmo: 25, reloadTime: 90 }, // Fast fire, same ammo as triple
+        wave: { fireDelay: 600, maxAmmo: 1, reloadTime: 600, chargeTime: 120, duration: 60 } // Decisive weapon
     };
 
     let weaponState = {
@@ -210,13 +216,15 @@ if ('serviceWorker' in navigator) {
         triple: { cooldown: 0, ammo: 25, reloadTimer: 0 },
         missile: { cooldown: 0, ammo: 1, reloadTimer: 0 },
         cannon: { cooldown: 0, ammo: 3, reloads: [0, 0, 0] },
-        interceptor: { cooldown: 0, ammo: 25, reloadTimer: 0 }
+        interceptor: { cooldown: 0, ammo: 25, reloadTimer: 0 },
+        wave: { cooldown: 0, ammo: 1, reloadTimer: 0 }
     };
     
     let inputState = {
         fireNormal: false,
         fireTriple: false,
         fireMissile: false,
+        fireWave: false,
         fireAll: false
     };
     
@@ -362,7 +370,8 @@ if ('serviceWorker' in navigator) {
             if(key === '6') selectBlock('missile');
             if(key === '7') selectBlock('cannon');
             if(key === '8') selectBlock('interceptor');
-            if(key === '9') selectBlock('delete');
+            if(key === '9') selectBlock('wave');
+            if(key === '0') selectBlock('delete');
         });
 
         setupJoystick();
@@ -611,7 +620,7 @@ if ('serviceWorker' in navigator) {
         scene.add(buildGuides);
     }
 
-    const BLOCK_TYPES = ['normal', 'armor', 'engine', 'turret', 'triple', 'missile', 'cannon', 'interceptor', 'core'];
+    const BLOCK_TYPES = ['normal', 'armor', 'engine', 'turret', 'triple', 'missile', 'cannon', 'interceptor', 'core', 'wave'];
     const PARTICLE_GEOMETRY = new THREE.BoxGeometry(1, 1, 1);
     const DIR_VECTORS = [
         {id: 0, x: 0, y: 1, z: 0}, // UP
@@ -1312,6 +1321,48 @@ if ('serviceWorker' in navigator) {
             cube.add(group);
         }
 
+        if (type === 'wave') {
+            cube.userData.isTurret = true;
+            cube.userData.subType = 'wave';
+            cube.userData.fireDir = direction;
+            
+            // Beam State
+            cube.userData.beamState = { phase: 'idle', timer: 0 };
+
+            const group = new THREE.Group();
+            const quaternion = new THREE.Quaternion();
+            quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+            group.setRotationFromQuaternion(quaternion);
+            // Center group
+            group.position.add(direction.clone().multiplyScalar(0.0)); 
+
+            // Heavy Barrel
+            const barrelGeo = new THREE.CylinderGeometry(0.35, 0.35, 1.4, 8);
+            const barrelMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9, roughness: 0.2 });
+            const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+            barrel.position.y = 0.2; // Stick out
+            group.add(barrel);
+
+            // Emissive Core/Rings
+            const ringGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.05, 8);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ffff }); 
+            
+            [-0.3, 0.0, 0.3, 0.6].forEach(y => {
+                const ring = new THREE.Mesh(ringGeo, ringMat);
+                ring.position.y = y;
+                group.add(ring);
+            });
+
+            // Techy Housing
+            const housingGeo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
+            const housingMat = new THREE.MeshStandardMaterial({ color: 0x004444, metalness: 0.6, roughness: 0.4 });
+            const housing = new THREE.Mesh(housingGeo, housingMat);
+            housing.position.y = -0.2;
+            group.add(housing);
+
+            cube.add(group);
+        }
+
         if (type === 'interceptor') {
             cube.userData.isTurret = true;
             cube.userData.subType = 'interceptor';
@@ -1520,6 +1571,11 @@ if ('serviceWorker' in navigator) {
 
             // Auto Interception Logic
             updateInterceptors();
+
+            if (inputState.fireWave) {
+                fireWaveCannon();
+            }
+            updateBeams();
 
             const fireAll = input.fire || inputState.fireAll; // Combined fire
             const fireNormal = inputState.fireNormal || gamepadFireState.normal;
@@ -2069,6 +2125,7 @@ if ('serviceWorker' in navigator) {
         const normalBtn = document.getElementById('normal-btn');
         const tripleBtn = document.getElementById('triple-btn');
         const missileBtn = document.getElementById('missile-btn');
+        const waveBtn = document.getElementById('wave-btn');
 
         const setPress = (el, val) => {
             el.addEventListener('touchstart', e=>{e.preventDefault(); val(true)}, {passive:false});
@@ -2083,6 +2140,7 @@ if ('serviceWorker' in navigator) {
         setPress(normalBtn, v => inputState.fireNormal = v);
         setPress(tripleBtn, v => inputState.fireTriple = v);
         setPress(missileBtn, v => inputState.fireMissile = v);
+        setPress(waveBtn, v => inputState.fireWave = v);
 
         const cannonBtn = document.getElementById('cannon-btn');
         if (cannonBtn) {
@@ -2595,21 +2653,192 @@ if ('serviceWorker' in navigator) {
         }
     }
 
+    function fireWaveCannon() {
+        if (!isBattleMode) return;
+        const state = weaponState.wave;
+        const stats = WEAPON_STATS.wave;
+        
+        if (state.reloadTimer > 0) return;
+        if (state.ammo <= 0) return;
+
+        // Start Charge for all wave blocks
+        let fired = false;
+        cubes.forEach(c => {
+            if (c.userData.subType === 'wave' && !c.userData.isDead) {
+                // Only fire if idle
+                if (c.userData.beamState.phase === 'idle') {
+                    c.userData.beamState.phase = 'charging';
+                    c.userData.beamState.timer = 0;
+                    fired = true;
+                }
+            }
+        });
+
+        if (fired) {
+            state.ammo--;
+            state.reloadTimer = stats.reloadTime; 
+        }
+    }
+
+    function updateBeams() {
+        if (!isBattleMode) return;
+        
+        const stats = WEAPON_STATS.wave;
+
+        cubes.forEach(c => {
+            if (c.userData.subType !== 'wave') return;
+            if (c.userData.isDead) {
+                if (c.userData.beamMesh) c.userData.beamMesh.visible = false;
+                c.userData.beamState.phase = 'idle';
+                return;
+            }
+
+            const bState = c.userData.beamState;
+
+            if (bState.phase === 'idle') return;
+
+            // Charging Phase
+            if (bState.phase === 'charging') {
+                bState.timer++;
+                
+                // Visuals: Suction Particles
+                if (frameCount % 2 === 0) {
+                     // Muzzle position approx
+                     const group = c.children.find(child => child.isGroup);
+                     const worldPos = group ? group.localToWorld(new THREE.Vector3(0, 1.2, 0)) : c.position.clone(); // 1.2 is barrel length approx
+                     
+                     const rnd = new THREE.Vector3((Math.random()-0.5), (Math.random()-0.5), (Math.random()-0.5)).normalize().multiplyScalar(3.0);
+                     const pPos = worldPos.clone().add(rnd);
+                     const dir = worldPos.clone().sub(pPos).normalize().multiplyScalar(0.3); // Suck in
+                     
+                     createParticle(pPos, dir, 0x00ffff, 0.2, 15, 'normal');
+                }
+                
+                // Shake (increasing)
+                shakeIntensity = Math.max(shakeIntensity, (bState.timer / stats.chargeTime) * 0.1);
+
+                if (bState.timer >= stats.chargeTime) {
+                    bState.phase = 'firing';
+                    bState.timer = 0;
+                    
+                    // Initialize Mesh
+                    if (!c.userData.beamMesh) {
+                        const beamGroup = new THREE.Group();
+                        
+                        // Core
+                        const coreGeo = new THREE.CylinderGeometry(0.4, 0.4, 100, 8, 1, true);
+                        coreGeo.translate(0, 50, 0); // Pivot base
+                        const coreMat = new THREE.MeshBasicMaterial({ 
+                            color: 0xffffff, 
+                            transparent: true, 
+                            opacity: 0.9,
+                            blending: THREE.AdditiveBlending 
+                        });
+                        const core = new THREE.Mesh(coreGeo, coreMat);
+                        beamGroup.add(core);
+                        
+                        // Outer Glow
+                        const glowGeo = new THREE.CylinderGeometry(1.2, 1.2, 100, 8, 1, true);
+                        glowGeo.translate(0, 50, 0);
+                        const glowMat = new THREE.MeshBasicMaterial({ 
+                            color: 0x00ffff, 
+                            transparent: true, 
+                            opacity: 0.5,
+                            blending: THREE.AdditiveBlending,
+                            side: THREE.DoubleSide
+                        });
+                        const glow = new THREE.Mesh(glowGeo, glowMat);
+                        beamGroup.add(glow);
+                        
+                        c.userData.beamMesh = beamGroup;
+                        
+                        // Attach to visual group to inherit rotation
+                        const group = c.children.find(child => child.isGroup);
+                        if(group) group.add(beamGroup);
+                        else c.add(beamGroup);
+                    }
+                    c.userData.beamMesh.visible = true;
+                    // Flash
+                    createExplosion(c.position.clone().applyMatrix4(robotGroup.matrixWorld), 0x00ffff, 2.0);
+                }
+            }
+            
+            // Firing Phase
+            else if (bState.phase === 'firing') {
+                bState.timer++;
+                
+                // Animate Width
+                const progress = bState.timer / stats.duration;
+                let w = 1.0;
+                if (progress < 0.2) w = progress * 5; 
+                else if (progress > 0.8) w = (1 - progress) * 5;
+                
+                if (c.userData.beamMesh) {
+                    c.userData.beamMesh.scale.set(w, 1, w);
+                    // Add some noise to scale for flickering energy
+                    const flicker = 1.0 + (Math.random()-0.5)*0.2;
+                    c.userData.beamMesh.scale.multiplyScalar(flicker);
+                }
+                
+                // Heavy Shake
+                shakeIntensity += 0.2;
+                
+                // Recoil
+                const recoil = c.userData.fireDir.clone().applyQuaternion(robotGroup.quaternion).negate().multiplyScalar(0.2);
+                velocity.add(recoil);
+
+                // Collision Logic
+                if (frameCount % 4 === 0) { 
+                    const group = c.children.find(child => child.isGroup);
+                    const muzzlePos = group ? group.localToWorld(new THREE.Vector3(0, 1.0, 0)) : c.position.clone();
+                    const fireDir = c.userData.fireDir.clone().applyQuaternion(robotGroup.quaternion).normalize();
+                    const p1 = muzzlePos;
+                    const p2 = muzzlePos.clone().add(fireDir.clone().multiplyScalar(150)); // Range
+                    const radius = 2.5 * w; 
+
+                    enemies.forEach(e => {
+                        e.cubes.forEach(ec => {
+                            const ePos = ec.position.clone().applyMatrix4(e.group.matrixWorld);
+                            
+                            // Dist to line
+                            const v = p2.clone().sub(p1);
+                            const wVec = ePos.clone().sub(p1);
+                            const c1 = wVec.dot(v);
+                            const c2 = v.dot(v);
+                            const t = Math.max(0, Math.min(1, c1 / c2));
+                            const closest = p1.clone().add(v.multiplyScalar(t));
+                            
+                            if (ePos.distanceTo(closest) < radius) {
+                                // Hit
+                                createParticle(ePos, new THREE.Vector3(0,0,0), ec.material.color.getHex(), 0.6, 10, 'normal');
+                                ec.userData.hp -= 20; // Massive damage
+                                if (ec.userData.hp <= 0) {
+                                    createExplosion(ePos, ec.material.color.getHex(), 1.5);
+                                    // Let main loop handle removal
+                                }
+                            }
+                        });
+                    });
+                }
+
+                if (bState.timer >= stats.duration) {
+                    bState.phase = 'cooldown';
+                    bState.timer = 0;
+                    if(c.userData.beamMesh) c.userData.beamMesh.visible = false;
+                }
+            }
+            else if (bState.phase === 'cooldown') {
+                // Just wait for global reload, reset local state
+                bState.phase = 'idle';
+            }
+        });
+    }
+
     function updateWeapons() {
-        const types = ['normal', 'triple', 'missile', 'interceptor'];
+        const types = ['normal', 'triple', 'missile', 'interceptor', 'wave'];
         types.forEach(type => {
             const state = weaponState[type];
             const stats = WEAPON_STATS[type];
-
-            // Interceptor logic handled separately in updateInterceptors, 
-            // but we keep generic update here for HUD consistency if needed later
-            // Actually, let's remove interceptor from here to avoid double decrement if we added logic there?
-            // No, updateInterceptors handles its own decrement. 
-            // BUT: reloadTimer and cooldown are decremented in updateWeapons for others.
-            // Let's exclude interceptor from this generic loop or ensure updateInterceptors handles EVERYTHING for it.
-            // I put full logic in updateInterceptors. So I should remove 'interceptor' from this list 
-            // OR remove logic from updateInterceptors and put it here.
-            // updateInterceptors is better as it needs target logic.
             
             if (type === 'interceptor') return; // Handled in updateInterceptors
 
@@ -2656,14 +2885,32 @@ if ('serviceWorker' in navigator) {
             const nState = weaponState.normal;
             const tState = weaponState.triple;
             const mState = weaponState.missile;
+            const wState = weaponState.wave;
             
             let nText = nState.reloadTimer > 0 ? "RELOAD" : nState.ammo;
             let tText = tState.reloadTimer > 0 ? "RELOAD" : tState.ammo;
             let mText = mState.reloadTimer > 0 ? "RELOAD" : mState.ammo;
+            let wText = wState.reloadTimer > 0 ? "CHG" : (wState.ammo > 0 ? "RDY" : "EMPTY");
 
             ammoDiv.innerHTML = `<span style="color:${nState.reloadTimer>0?'red':'cyan'}">NRM: ${nText}</span>` +
                                 `<span style="margin-left: 10px; color:${tState.reloadTimer>0?'red':'orange'}">TRP: ${tText}</span>` + 
-                                `<span style="margin-left: 10px; color:${mState.reloadTimer>0?'red':'#9933ff'}">MSL: ${mText}</span>`;
+                                `<span style="margin-left: 10px; color:${mState.reloadTimer>0?'red':'#9933ff'}">MSL: ${mText}</span>` +
+                                `<span style="margin-left: 10px; color:${wState.reloadTimer>0?'red':'#00ffff'}">WAV: ${wText}</span>`;
+
+            // Update Wave Button visuals
+            const wBtn = document.getElementById('wave-btn');
+            if (wBtn) {
+                if (wState.reloadTimer > 0) {
+                    const pct = 1.0 - (wState.reloadTimer / WEAPON_STATS.wave.reloadTime);
+                    wBtn.style.background = `linear-gradient(to top, rgba(0,255,255,0.1) ${pct*100}%, rgba(50,0,0,0.5) ${pct*100}%)`;
+                    wBtn.style.borderColor = '#550000';
+                    wBtn.style.color = '#888';
+                } else if (wState.ammo > 0) {
+                    wBtn.style.background = 'rgba(0, 255, 255, 0.2)';
+                    wBtn.style.borderColor = '#00ffff';
+                    wBtn.style.color = '#00ffff';
+                }
+            }
         }
     }
 
