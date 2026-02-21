@@ -2780,13 +2780,9 @@ if ('serviceWorker' in navigator) {
                     c.userData.beamMesh.scale.multiplyScalar(flicker);
                 }
                 
-                // Heavy Shake
-                shakeIntensity += 0.2;
+                // Steady Shake (No recoil movement)
+                shakeIntensity += 0.05;
                 
-                // Recoil
-                const recoil = c.userData.fireDir.clone().applyQuaternion(robotGroup.quaternion).negate().multiplyScalar(0.2);
-                velocity.add(recoil);
-
                 // Collision Logic
                 if (frameCount % 4 === 0) { 
                     const group = c.children.find(child => child.isGroup);
