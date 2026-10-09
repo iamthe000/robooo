@@ -919,12 +919,31 @@ let scene, camera, renderer, controls;
                     }
                 }
                 
-                if (asEnemy) {
-                    if (data.length === 0) throw new Error("機体にブロックがありません");
-                    enemyRobotLayout = data.map(d => ({
-                        x: Number(d.x), y: Number(d.y), z: Number(d.z),
+                if (!Array.isArray(data) || data.length === 0) {
+                    throw new Error("機体にブロックがありません");
+                }
+
+                // Validate the complete file before changing the current robot. A
+                // malformed or unsupported file must not leave the builder empty.
+                data = data.map((d, index) => {
+                    const x = Number(d.x), y = Number(d.y), z = Number(d.z);
+                    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+                        throw new Error(`${index + 1}個目のブロックの座標が不正です`);
+                    }
+                    return {
+                        x, y, z,
                         type: BLOCK_TYPES.includes(d.type) ? d.type : 'normal',
-                        dir: d.dir && d.dir.isVector3 ? d.dir.clone() : new THREE.Vector3(d.dir?.x || 0, d.dir?.y ?? 1, d.dir?.z || 0),
+                        color: Number.isFinite(d.color) ? d.color : 0xffffff,
+                        dir: d.dir && d.dir.isVector3
+                            ? d.dir.clone()
+                            : new THREE.Vector3(Number(d.dir?.x) || 0, Number(d.dir?.y) || 1, Number(d.dir?.z) || 0)
+                    };
+                });
+
+                if (asEnemy) {
+                    enemyRobotLayout = data.map(d => ({
+                        ...d,
+                        dir: d.dir.clone(),
                         color: Number.isFinite(d.color) ? d.color : 0xff3333
                     }));
                     document.getElementById('build-msg').textContent = `敵機体を設定: ${file.name}`;

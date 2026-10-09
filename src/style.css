@@ -58,4 +58,35 @@ body { margin: 0; overflow: hidden; background-color: #1a1a1a; color: white; fon
         #status-bar .btn { position: relative; pointer-events: auto; min-width: 80px; text-align: center; white-space: nowrap; }
 
         
-        #file-input { display: none; }
+        #file-input,
+        #enemy-file-input { display: none; }
+
+        @media (max-width: 600px) {
+            #top-bar {
+                height: auto;
+                min-height: 50px;
+                padding: 8px;
+                gap: 8px;
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+
+            .menu-group {
+                flex: 1 1 100%;
+                justify-content: center;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+
+            #top-bar > select,
+            #mode-btn {
+                position: relative !important;
+                right: auto !important;
+                margin: 0;
+            }
+
+            #top-bar .btn {
+                padding: 8px 10px;
+                font-size: 11px;
+            }
+        }
