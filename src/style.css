@@ -59,16 +59,18 @@ body { margin: 0; overflow: hidden; background-color: #1a1a1a; color: white; fon
 
         
         #file-input,
-        #enemy-file-input { display: none; }
+        #enemy-file-input { display: none !important; }
 
         @media (max-width: 600px) {
             #top-bar {
                 height: auto;
                 min-height: 50px;
-                padding: 8px;
+                min-height: calc(50px + env(safe-area-inset-top));
+                padding: max(8px, env(safe-area-inset-top)) 8px 8px;
                 gap: 8px;
                 flex-wrap: wrap;
                 justify-content: center;
+                align-content: flex-start;
             }
 
             .menu-group {
@@ -83,6 +85,12 @@ body { margin: 0; overflow: hidden; background-color: #1a1a1a; color: white; fon
                 position: relative !important;
                 right: auto !important;
                 margin: 0;
+            }
+
+            #mode-btn {
+                flex: 0 0 auto;
+                z-index: 2;
+                white-space: nowrap;
             }
 
             #top-bar .btn {
