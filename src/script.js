@@ -89,12 +89,13 @@ let scene, camera, renderer, controls;
     let currentDifficulty = DIFFICULTY_SETTINGS.normal;
 
     const GRAPHICS_PROFILES = {
+        lite: { particleMult: 0.1, lifeMult: 0.5, dustCount: 100, trailSkip: 5, explosionScale: 0.5, bloom: false, pixelRatio: 0.75 },
         low: { particleMult: 0.3, lifeMult: 0.5, dustCount: 200, trailSkip: 3, explosionScale: 0.5, bloom: false },
         normal: { particleMult: 1.0, lifeMult: 1.0, dustCount: 1000, trailSkip: 1, explosionScale: 1.0, bloom: false },
         high: { particleMult: 2.0, lifeMult: 1.2, dustCount: 2500, trailSkip: 0, explosionScale: 1.5, bloom: true, bloomStrength: 1.0, bloomRadius: 0.2 },
         pro: { particleMult: 2.5, lifeMult: 1.5, dustCount: 3500, trailSkip: 0, explosionScale: 2.0, bloom: true, bloomStrength: 1.8, bloomRadius: 0.5 }
     };
-    let currentGraphics = GRAPHICS_PROFILES.normal;
+    let currentGraphics = GRAPHICS_PROFILES[localStorage.getItem('graphicsProfile')] || GRAPHICS_PROFILES.normal;
     let frameCount = 0;
 
     // HUD Variables
@@ -191,8 +192,8 @@ let scene, camera, renderer, controls;
 
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         renderer.autoClear = false; // Allow manual clearing for HUD overlay
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, currentGraphics.pixelRatio || 2));
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         document.getElementById('canvas-container').appendChild(renderer.domElement);
 
         // Bloom Setup
@@ -255,8 +256,16 @@ let scene, camera, renderer, controls;
         window.addEventListener('keydown', e => keys[e.code] = true);
         window.addEventListener('keyup', e => keys[e.code] = false);
 
-        document.getElementById('graphics-select').addEventListener('change', (e) => {
-            currentGraphics = GRAPHICS_PROFILES[e.target.value] || GRAPHICS_PROFILES.normal;
+        const graphicsSelect = document.getElementById('graphics-select');
+        const savedGraphicsProfile = localStorage.getItem('graphicsProfile');
+        graphicsSelect.value = savedGraphicsProfile in GRAPHICS_PROFILES ? savedGraphicsProfile : 'normal';
+        graphicsSelect.addEventListener('change', (e) => {
+            const profileName = e.target.value;
+            currentGraphics = GRAPHICS_PROFILES[profileName] || GRAPHICS_PROFILES.normal;
+            localStorage.setItem('graphicsProfile', profileName);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, currentGraphics.pixelRatio || 2));
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            if (composer) composer.setSize(window.innerWidth, window.innerHeight);
             createSpaceDust();
         });
 
