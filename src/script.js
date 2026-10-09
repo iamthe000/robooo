@@ -16,6 +16,7 @@ let scene, camera, renderer, controls;
     let stars, dust, gridHelper, buildGuides;
     let ambLight, dirLight;
     let enemies = [];
+    let enemyRobotLayout = null;
     let spawnTimer = 0;
     let playerHP = 100;
 
@@ -262,7 +263,9 @@ let scene, camera, renderer, controls;
         document.getElementById('mode-btn').addEventListener('click', toggleMode);
         document.getElementById('save-btn').addEventListener('click', saveRobot);
         document.getElementById('load-btn').addEventListener('click', () => document.getElementById('file-input').click());
-        document.getElementById('file-input').addEventListener('change', loadRobot);
+        document.getElementById('file-input').addEventListener('change', event => loadRobot(event, false));
+        document.getElementById('load-enemy-btn').addEventListener('click', () => document.getElementById('enemy-file-input').click());
+        document.getElementById('enemy-file-input').addEventListener('change', event => loadRobot(event, true));
         document.getElementById('view-btn').addEventListener('click', toggleViewMode);
         document.getElementById('view-back-btn').addEventListener('click', toggleViewMode);
         
@@ -799,7 +802,7 @@ let scene, camera, renderer, controls;
         link.click();
     }
 
-    function loadRobot(event) {
+    function loadRobot(event, asEnemy = false) {
         if(isBattleMode) return;
         const file = event.target.files[0];
         if (!file) return;
@@ -907,6 +910,19 @@ let scene, camera, renderer, controls;
                     }
                 }
                 
+                if (asEnemy) {
+                    if (data.length === 0) throw new Error("機体にブロックがありません");
+                    enemyRobotLayout = data.map(d => ({
+                        x: Number(d.x), y: Number(d.y), z: Number(d.z),
+                        type: BLOCK_TYPES.includes(d.type) ? d.type : 'normal',
+                        dir: d.dir && d.dir.isVector3 ? d.dir.clone() : new THREE.Vector3(d.dir?.x || 0, d.dir?.y ?? 1, d.dir?.z || 0),
+                        color: Number.isFinite(d.color) ? d.color : 0xff3333
+                    }));
+                    document.getElementById('build-msg').textContent = `敵機体を設定: ${file.name}`;
+                    document.getElementById('enemy-file-input').value = '';
+                    return;
+                }
+
                 for(let i=cubes.length-1; i>=0; i--) {
                     robotGroup.remove(cubes[i]);
                 }
@@ -921,6 +937,7 @@ let scene, camera, renderer, controls;
             } catch (err) {
                 alert("ファイルの読み込みに失敗しました: " + err.message);
                 console.error(err);
+                document.getElementById(asEnemy ? 'enemy-file-input' : 'file-input').value = '';
             }
         };
         reader.readAsArrayBuffer(file);
@@ -2402,11 +2419,11 @@ let scene, camera, renderer, controls;
         group.position.set(x, y, z);
         group.lookAt(robotGroup.position);
 
-        const blocks = getEnemyLayout(currentDifficulty.enemyType);
+        const blocks = enemyRobotLayout || getEnemyLayout(currentDifficulty.enemyType);
 
         blocks.forEach(b => {
             const geometry = new THREE.BoxGeometry(1, 1, 1);
-            let color = 0xff0000; 
+            let color = b.color ?? 0xff0000;
             let emissive = 0x330000;
 
             if (b.type === 'core') { color = 0x00ff00; emissive = 0x00ff00; }
